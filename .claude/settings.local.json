@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls /c/Users/ACER-PC/Desktop/KABAYAN/kabayan-system/apps/web/app/'\\(auth\\)'/)",
+      "Bash(find /c/Users/ACER-PC/Desktop/KABAYAN/kabayan-system/apps/api -name \"requirements.txt\" -exec cat {})"
+    ]
+  }
+}
