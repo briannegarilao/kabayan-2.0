@@ -19,10 +19,12 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // Step 1: Authenticate
+    const { data: signInData, error: authError } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
     if (authError) {
       setError(authError.message);
@@ -30,28 +32,44 @@ export default function LoginPage() {
       return;
     }
 
-    // Verify user has dashboard access (lgu_admin or barangay_official)
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) {
-      const { data: profile } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .single();
+    // Step 2: Verify role using the session we just got
+    // Use the user ID directly from the sign-in response
+    const userId = signInData.user?.id;
+    if (!userId) {
+      setError("Authentication succeeded but no user ID returned.");
+      setIsLoading(false);
+      return;
+    }
 
-      if (
-        !profile ||
-        !["lgu_admin", "barangay_official"].includes(profile.role)
-      ) {
-        await supabase.auth.signOut();
-        setError(
-          "Access denied. This dashboard is for LGU administrators and barangay officials only.",
-        );
-        setIsLoading(false);
-        return;
-      }
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .select("role")
+      .eq("id", userId)
+      .single();
+
+    // Debug: log what we get back (check browser console)
+    console.log("User ID:", userId);
+    console.log("Profile response:", { profile, profileError });
+
+    if (profileError) {
+      await supabase.auth.signOut();
+      setError(
+        `Could not verify your role: ${profileError.message} (code: ${profileError.code})`,
+      );
+      setIsLoading(false);
+      return;
+    }
+
+    if (
+      !profile ||
+      !["lgu_admin", "barangay_official"].includes(profile.role)
+    ) {
+      await supabase.auth.signOut();
+      setError(
+        "Access denied. This dashboard is for LGU administrators and barangay officials only.",
+      );
+      setIsLoading(false);
+      return;
     }
 
     router.push("/dashboard");
@@ -78,7 +96,6 @@ export default function LoginPage() {
         {/* Login Card */}
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
           <form onSubmit={handleLogin} className="space-y-4">
-            {/* Error Message */}
             {error && (
               <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -86,7 +103,6 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Email */}
             <div>
               <label
                 htmlFor="email"
@@ -97,6 +113,7 @@ export default function LoginPage() {
               <input
                 id="email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@dasmarinas.gov.ph"
@@ -105,7 +122,6 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Password */}
             <div>
               <label
                 htmlFor="password"
@@ -116,6 +132,7 @@ export default function LoginPage() {
               <input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -124,7 +141,6 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Submit */}
             <button
               type="submit"
               disabled={isLoading}
@@ -142,7 +158,6 @@ export default function LoginPage() {
           </form>
         </div>
 
-        {/* Footer */}
         <p className="mt-6 text-center text-xs text-gray-600">
           Authorized LGU personnel only. Unauthorized access is prohibited.
         </p>
