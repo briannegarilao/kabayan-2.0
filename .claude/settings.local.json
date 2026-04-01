@@ -7,7 +7,16 @@
       "Bash(git push:*)",
       "Bash(npm install:*)",
       "Bash(cd:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(find C:UsersACER-PCDesktopKABAYANkabayan-system -type f \\\\\\(-name .env* -o -name *.env \\\\\\))",
+      "Bash(grep -r \"REVALIDATION_SECRET\\\\|secret\\\\|password\\\\|api.key\\\\|Bearer\" C:UsersACER-PCDesktopKABAYANkabayan-system/apps/web/app --include=*.ts --include=*.tsx)",
+      "Bash(find C:UsersACER-PCDesktopKABAYANkabayan-system/packages/database -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js \\\\\\) ! -path */node_modules/*)",
+      "Bash(grep -r \"bearer\\\\|Bearer\\\\|authorization\\\\|Authorization\" C:UsersACER-PCDesktopKABAYANkabayan-system/apps --include=*.ts --include=*.tsx --include=*.py)",
+      "Bash(grep:*)",
+      "Bash(find C:UsersACER-PCDesktopKABAYANkabayan-system/apps/mobile-responder -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.json -o -name *.env* \\\\\\) ! -path */node_modules/*)",
+      "Bash(find C:UsersACER-PCDesktopKABAYANkabayan-system/apps/api -type f -name *.py ! -path */venv/* ! -path */__pycache__/*)",
+      "Bash(find C:UsersACER-PCDesktopKABAYANkabayan-system -type f \\\\\\(-name *.json \\\\\\) ! -path */node_modules/* ! -path */.git/* ! -path */.next/* ! -path */venv/*)",
+      "Bash(chmod:*)"
     ]
   }
 }
