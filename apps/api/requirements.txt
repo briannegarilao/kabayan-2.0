@@ -1,0 +1,19 @@
+# apps/api/requirements.txt
+# Phase 1 — Backend Foundation (lean, no ML packages yet)
+
+# Core framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Supabase Python client
+supabase==2.11.0
+
+# HTTP client for OSRM + Open-Meteo + Expo Push
+httpx==0.28.1
+
+# Environment config
+python-dotenv==1.0.1
+pydantic-settings==2.7.1
+
+# Utilities
+python-dateutil==2.9.0
