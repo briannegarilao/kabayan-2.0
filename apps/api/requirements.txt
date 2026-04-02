@@ -6,7 +6,7 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 
 # Supabase Python client
-supabase==2.11.0
+supabase==2.28.3
 
 # HTTP client for OSRM + Open-Meteo + Expo Push
 httpx==0.28.1

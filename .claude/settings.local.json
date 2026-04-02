@@ -16,7 +16,14 @@
       "Bash(find C:UsersACER-PCDesktopKABAYANkabayan-system/apps/mobile-responder -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.json -o -name *.env* \\\\\\) ! -path */node_modules/*)",
       "Bash(find C:UsersACER-PCDesktopKABAYANkabayan-system/apps/api -type f -name *.py ! -path */venv/* ! -path */__pycache__/*)",
       "Bash(find C:UsersACER-PCDesktopKABAYANkabayan-system -type f \\\\\\(-name *.json \\\\\\) ! -path */node_modules/* ! -path */.git/* ! -path */.next/* ! -path */venv/*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(pip show:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(uvicorn main:app --reload --port 8000)",
+      "Bash(kill %1)",
+      "Bash(wait)",
+      "Bash(timeout 8 uvicorn main:app --port 8000)"
     ]
   }
 }
