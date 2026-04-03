@@ -23,7 +23,11 @@
       "Bash(uvicorn main:app --reload --port 8000)",
       "Bash(kill %1)",
       "Bash(wait)",
-      "Bash(timeout 8 uvicorn main:app --port 8000)"
+      "Bash(timeout 8 uvicorn main:app --port 8000)",
+      "Bash(node -e \"require\\('/c/Users/ACER-PC/Desktop/KABAYAN/kabayan-system/node_modules/expo/node_modules/@expo/cli/build/src/events'\\)\")",
+      "Bash(node:*)",
+      "Bash(npm --version)",
+      "Bash(git rm:*)"
     ]
   }
 }
