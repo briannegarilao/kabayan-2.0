@@ -9,7 +9,7 @@ export default function Index() {
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0f172a" }}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color="#f59e0b" />
       </View>
     );
   }
@@ -18,7 +18,8 @@ export default function Index() {
     return <Redirect href="/login" />;
   }
 
-  if (profile && profile.role !== "citizen") {
+  // Only responders can use this app
+  if (profile && profile.role !== "responder") {
     return <Redirect href="/login" />;
   }
 

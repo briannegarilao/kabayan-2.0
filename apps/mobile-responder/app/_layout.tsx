@@ -1,17 +1,9 @@
-// app/_layout.tsx — REPLACES existing. Adds offline queue watcher.
-import { useEffect } from "react";
+// app/_layout.tsx
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider } from "../contexts/AuthContext";
-import { startQueueWatcher } from "../services/sosService";
 
 export default function RootLayout() {
-  // Start watching for network reconnect to flush queued SOS reports
-  // Runs once at app startup — no polling, just listens for connectivity changes
-  useEffect(() => {
-    startQueueWatcher();
-  }, []);
-
   return (
     <AuthProvider>
       <StatusBar style="light" />

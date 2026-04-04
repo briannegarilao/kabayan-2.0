@@ -1,7 +1,8 @@
-// contexts/AuthContext.tsx
+// contexts/AuthContext.tsx — REPLACES existing. Adds push token registration on login.
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../utils/supabase";
+import { registerPushToken } from "../services/pushNotifications";
 
 interface UserProfile {
   id: string;
@@ -9,6 +10,7 @@ interface UserProfile {
   role: string;
   barangay: string | null;
   phone_number: string | null;
+  expo_push_token: string | null;
 }
 
 interface AuthState {
@@ -20,13 +22,16 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (
+    email: string,
+    password: string,
+  ) => Promise<{ error: string | null }>;
   signUp: (
     email: string,
     password: string,
     fullName: string,
     barangay: string,
-    phone: string
+    phone: string,
   ) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
@@ -46,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error } = await supabase
         .from("users")
-        .select("id, full_name, role, barangay, phone_number")
+        .select("id, full_name, role, barangay, phone_number, expo_push_token")
         .eq("id", userId)
         .maybeSingle();
       if (error || !data) return null;
@@ -67,40 +72,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             isLoading: false,
             isAuthenticated: true,
           });
+          // Register push token on app startup if logged in
+          registerPushToken(session.user.id).catch(() => {});
         });
       } else {
         setState((s) => ({ ...s, isLoading: false }));
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        if (session?.user) {
-          const profile = await fetchProfile(session.user.id);
-          setState({
-            session,
-            user: session.user,
-            profile,
-            isLoading: false,
-            isAuthenticated: true,
-          });
-        } else {
-          setState({
-            session: null,
-            user: null,
-            profile: null,
-            isLoading: false,
-            isAuthenticated: false,
-          });
-        }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id);
+        setState({
+          session,
+          user: session.user,
+          profile,
+          isLoading: false,
+          isAuthenticated: true,
+        });
+      } else {
+        setState({
+          session: null,
+          user: null,
+          profile: null,
+          isLoading: false,
+          isAuthenticated: false,
+        });
       }
-    );
+    });
 
     return () => subscription.unsubscribe();
   }, []);
 
   async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     if (error) return { error: error.message };
     return { error: null };
   }
@@ -110,7 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     password: string,
     fullName: string,
     barangay: string,
-    phone: string
+    phone: string,
   ) {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
@@ -119,7 +129,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (authError) return { error: authError.message };
     if (!authData.user) return { error: "Registration failed." };
 
-    // Insert into public.users — matches ACTUAL table columns
     const { error: profileError } = await supabase.from("users").insert({
       id: authData.user.id,
       full_name: fullName,
@@ -131,6 +140,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (profileError) {
       console.warn("Profile insert failed:", profileError.message);
     }
+
+    // Register push token for the new user
+    registerPushToken(authData.user.id).catch(() => {});
 
     return { error: null };
   }
