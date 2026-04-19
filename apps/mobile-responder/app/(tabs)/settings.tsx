@@ -1,14 +1,22 @@
-// app/(tabs)/settings.tsx
+// app/(tabs)/settings.tsx — REPLACES Step 1 version. Enhanced with emergency contacts.
 import React from "react";
-import { View, Text, TouchableOpacity, Alert, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, Alert, ScrollView, Linking } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../../contexts/AuthContext";
+
+const EMERGENCY_CONTACTS = [
+  { label: "National Emergency", number: "911" },
+  { label: "Philippine Red Cross", number: "143" },
+  { label: "NDRRMC", number: "(02) 8911-5061" },
+  { label: "PNP Hotline", number: "117" },
+  { label: "BFP (Fire)", number: "(02) 8426-0219" },
+];
 
 export default function SettingsScreen() {
   const { profile, responder, user, signOut } = useAuth();
 
   async function handleSignOut() {
-    Alert.alert("Sign Out", "Are you sure?", [
+    Alert.alert("Sign Out", "This will stop GPS tracking and take you off duty. Are you sure?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign Out",
@@ -44,6 +52,11 @@ export default function SettingsScreen() {
             <Text style={{ color: "#94a3b8", fontSize: 12 }}>{profile?.barangay || "—"}</Text>
           </View>
         </View>
+        {profile?.phone_number && (
+          <Text style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>
+            Phone: {profile.phone_number}
+          </Text>
+        )}
       </View>
 
       {/* Vehicle & Team */}
@@ -54,7 +67,7 @@ export default function SettingsScreen() {
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: "#94a3b8", fontSize: 13 }}>Team Name</Text>
-            <Text style={{ color: "#e2e8f0", fontSize: 13 }}>{responder?.team_name || "—"}</Text>
+            <Text style={{ color: "#e2e8f0", fontSize: 13, fontWeight: "600" }}>{responder?.team_name || "—"}</Text>
           </View>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <Text style={{ color: "#94a3b8", fontSize: 13 }}>Vehicle Type</Text>
@@ -68,7 +81,43 @@ export default function SettingsScreen() {
             <Text style={{ color: "#94a3b8", fontSize: 13 }}>Current Load</Text>
             <Text style={{ color: "#e2e8f0", fontSize: 13 }}>{responder?.current_load || 0} on board</Text>
           </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <Text style={{ color: "#94a3b8", fontSize: 13 }}>Duty Status</Text>
+            <Text
+              style={{
+                color: responder?.is_available ? "#22c55e" : "#dc2626",
+                fontSize: 13,
+                fontWeight: "600",
+              }}
+            >
+              {responder?.is_available ? "On Duty" : "Off Duty"}
+            </Text>
+          </View>
         </View>
+      </View>
+
+      {/* Emergency Contacts */}
+      <View style={{ backgroundColor: "#1e293b", borderRadius: 16, padding: 20, marginBottom: 16 }}>
+        <Text style={{ fontSize: 14, fontWeight: "600", color: "#e2e8f0", marginBottom: 12 }}>
+          Emergency Contacts
+        </Text>
+        {EMERGENCY_CONTACTS.map((contact, i) => (
+          <TouchableOpacity
+            key={contact.number}
+            onPress={() => Linking.openURL(`tel:${contact.number}`)}
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingVertical: 10,
+              borderTopWidth: i > 0 ? 1 : 0,
+              borderTopColor: "#334155",
+            }}
+          >
+            <Text style={{ color: "#94a3b8", fontSize: 13 }}>{contact.label}</Text>
+            <Text style={{ color: "#3b82f6", fontSize: 13, fontWeight: "600" }}>{contact.number}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* App Info */}
@@ -92,6 +141,10 @@ export default function SettingsScreen() {
       >
         <Text style={{ color: "#ffffff", fontSize: 14, fontWeight: "600" }}>Sign Out</Text>
       </TouchableOpacity>
+
+      <Text style={{ textAlign: "center", color: "#475569", fontSize: 11, marginTop: 20 }}>
+        KABAYAN — Barangay Emergency Response System{"\n"}Dasmarinas City, Cavite
+      </Text>
     </ScrollView>
   );
 }

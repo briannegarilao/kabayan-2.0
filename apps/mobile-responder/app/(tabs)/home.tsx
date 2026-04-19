@@ -1,17 +1,102 @@
-// app/(tabs)/home.tsx
-import React, { useState } from "react";
+// app/(tabs)/home.tsx — REPLACES Step 2 version. Adds Realtime trip subscription.
+import React, { useState, useEffect } from "react";
 import { View, Text, Switch, Alert, ActivityIndicator } from "react-native";
+import { router } from "expo-router";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../utils/supabase";
 import Config from "../../utils/config";
+import {
+  startTracking,
+  stopTracking,
+  onLocationStatusChange,
+  getLocationStatus,
+  LocationStatus,
+} from "../../services/locationTracker";
 
 export default function HomeScreen() {
   const { profile, responder, user, refreshResponder } = useAuth();
   const [toggling, setToggling] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<LocationStatus>(getLocationStatus());
 
   const isAvailable = responder?.is_available ?? false;
   const currentLoad = responder?.current_load ?? 0;
   const maxCapacity = responder?.max_capacity ?? 10;
   const loadPct = maxCapacity > 0 ? Math.round((currentLoad / maxCapacity) * 100) : 0;
+
+  // Listen for GPS status changes
+  useEffect(() => {
+    onLocationStatusChange(setGpsStatus);
+    return () => {
+      onLocationStatusChange(() => {});
+    };
+  }, []);
+
+  // Auto-start/stop tracking based on duty status
+  useEffect(() => {
+    if (isAvailable && user) {
+      startTracking(user.id);
+    } else {
+      stopTracking();
+    }
+  }, [isAvailable, user]);
+
+  // Realtime subscription: listen for NEW trip assignments for this responder
+  // When the engine creates a trip_plan with this responder_id, navigate to the assignment alert
+  useEffect(() => {
+    if (!user) return;
+
+    const channelId = `trip-assign-${Date.now()}`;
+    const channel = supabase
+      .channel(channelId)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "trip_plans",
+          filter: `responder_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const newTrip = payload.new as any;
+          if (newTrip.status === "active") {
+            // Navigate to assignment alert screen
+            router.push({
+              pathname: "/assignment",
+              params: { tripId: newTrip.id },
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  // Also check on mount: is there an active trip already assigned to me?
+  useEffect(() => {
+    if (!user) return;
+
+    (async () => {
+      const { data } = await supabase
+        .from("trip_plans")
+        .select("id, status")
+        .eq("responder_id", user.id)
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        // There's an active trip — navigate to assignment alert
+        router.push({
+          pathname: "/assignment",
+          params: { tripId: data.id },
+        });
+      }
+    })();
+  }, [user]);
 
   async function toggleDuty(value: boolean) {
     if (!user) return;
@@ -32,13 +117,18 @@ export default function HomeScreen() {
         return;
       }
 
-      // Refresh local responder data
       await refreshResponder();
     } catch (e) {
       Alert.alert("Error", "Cannot reach server. Check your connection.");
     } finally {
       setToggling(false);
     }
+  }
+
+  function formatTime(iso: string | null): string {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 
   return (
@@ -66,10 +156,15 @@ export default function HomeScreen() {
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
           <View>
-            <Text style={{ color: "#e2e8f0", fontSize: 16, fontWeight: "600" }}>
-              Duty Status
-            </Text>
-            <Text style={{ color: isAvailable ? "#22c55e" : "#dc2626", fontSize: 14, fontWeight: "700", marginTop: 4 }}>
+            <Text style={{ color: "#e2e8f0", fontSize: 16, fontWeight: "600" }}>Duty Status</Text>
+            <Text
+              style={{
+                color: isAvailable ? "#22c55e" : "#dc2626",
+                fontSize: 14,
+                fontWeight: "700",
+                marginTop: 4,
+              }}
+            >
               {isAvailable ? "ON DUTY — Available" : "OFF DUTY"}
             </Text>
           </View>
@@ -86,20 +181,46 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Vehicle Info */}
-      <View style={{ backgroundColor: "#1e293b", borderRadius: 16, padding: 20, marginBottom: 16 }}>
-        <Text style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
-          Vehicle
-        </Text>
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-          <Text style={{ color: "#94a3b8", fontSize: 13 }}>Type</Text>
-          <Text style={{ color: "#e2e8f0", fontSize: 13 }}>{responder?.vehicle_type || "—"}</Text>
+      {/* GPS Status Card */}
+      {isAvailable && (
+        <View
+          style={{
+            backgroundColor: "#1e293b",
+            borderRadius: 16,
+            padding: 16,
+            marginBottom: 16,
+            borderLeftWidth: 3,
+            borderLeftColor: gpsStatus.isTracking && !gpsStatus.error ? "#22c55e" : "#f59e0b",
+          }}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }}>
+              GPS Tracking
+            </Text>
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: gpsStatus.isTracking && !gpsStatus.error ? "#22c55e" : "#f59e0b",
+              }}
+            />
+          </View>
+          {gpsStatus.lastLat && gpsStatus.lastLng ? (
+            <View style={{ marginTop: 8 }}>
+              <Text style={{ color: "#94a3b8", fontSize: 12 }}>
+                {gpsStatus.lastLat.toFixed(5)}, {gpsStatus.lastLng.toFixed(5)}
+              </Text>
+              <Text style={{ color: "#475569", fontSize: 11, marginTop: 2 }}>
+                Last update: {formatTime(gpsStatus.lastUpdate)}
+              </Text>
+            </View>
+          ) : (
+            <Text style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>Acquiring GPS...</Text>
+          )}
+          <Text style={{ color: "#475569", fontSize: 10, marginTop: 6 }}>Updating every 15 seconds</Text>
         </View>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 6 }}>
-          <Text style={{ color: "#94a3b8", fontSize: 13 }}>Max Capacity</Text>
-          <Text style={{ color: "#e2e8f0", fontSize: 13 }}>{maxCapacity} people</Text>
-        </View>
-      </View>
+      )}
 
       {/* Load Bar */}
       <View style={{ backgroundColor: "#1e293b", borderRadius: 16, padding: 20, marginBottom: 16 }}>
@@ -128,9 +249,7 @@ export default function HomeScreen() {
           />
         </View>
         <Text style={{ color: "#64748b", fontSize: 11, marginTop: 6, textAlign: "center" }}>
-          {currentLoad === 0
-            ? "Vehicle empty — ready for assignment"
-            : `${currentLoad} people on board`}
+          {currentLoad === 0 ? "Vehicle empty — ready for assignment" : `${currentLoad} people on board`}
         </Text>
       </View>
 
@@ -138,20 +257,16 @@ export default function HomeScreen() {
       <View style={{ backgroundColor: "#1e293b", borderRadius: 16, padding: 20, alignItems: "center" }}>
         {isAvailable ? (
           <>
-            <Text style={{ color: "#22c55e", fontSize: 14, fontWeight: "600" }}>
-              Waiting for assignment...
-            </Text>
+            <Text style={{ color: "#22c55e", fontSize: 14, fontWeight: "600" }}>Waiting for assignment...</Text>
             <Text style={{ color: "#64748b", fontSize: 12, marginTop: 4, textAlign: "center" }}>
-              You will receive an assignment when a citizen sends an SOS near your location.
+              GPS is streaming. You will receive an alert when a citizen sends an SOS.
             </Text>
           </>
         ) : (
           <>
-            <Text style={{ color: "#dc2626", fontSize: 14, fontWeight: "600" }}>
-              You are off duty
-            </Text>
+            <Text style={{ color: "#dc2626", fontSize: 14, fontWeight: "600" }}>You are off duty</Text>
             <Text style={{ color: "#64748b", fontSize: 12, marginTop: 4, textAlign: "center" }}>
-              Toggle duty ON to start receiving assignments and enable GPS tracking.
+              Toggle duty ON to start GPS tracking and receive assignments.
             </Text>
           </>
         )}
