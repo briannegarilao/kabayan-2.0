@@ -17,6 +17,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
   "/dashboard/incidents": "Incident Management",
   "/dashboard/responders": "Responder Tracking",
+  "/dashboard/map": "Live Map",
   "/dashboard/analytics": "Analytics & Insights",
   "/dashboard/evacuation": "Evacuation Centers",
   "/dashboard/announcements": "Announcements",

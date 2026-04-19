@@ -12,6 +12,7 @@ import {
   Megaphone,
   Shield,
   LogOut,
+  Map as MapIcon,
 } from "lucide-react";
 import { createClient } from "../../lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -38,6 +39,11 @@ const navItems = [
     label: "Responders",
     href: "/dashboard/responders",
     icon: Users,
+  },
+  {
+    label: "Live Map",
+    href: "/dashboard/map",
+    icon: MapIcon,
   },
   {
     label: "Analytics",

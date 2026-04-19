@@ -14,7 +14,8 @@ import type { SOSIncident } from "../../lib/types";
 
 // --- Custom marker icon based on severity ---
 function createSeverityIcon(severity: string | null): L.DivIcon {
-  const color = SEVERITY_COLORS[severity || "pending"] || SEVERITY_COLORS.pending;
+  const color =
+    SEVERITY_COLORS[severity || "pending"] || SEVERITY_COLORS.pending;
   return L.divIcon({
     className: "", // Remove default leaflet-div-icon styling
     html: `
@@ -48,8 +49,8 @@ export default function MapContent({ incidents }: MapContentProps) {
       center: MAP_CONFIG.defaultCenter,
       zoom: MAP_CONFIG.defaultZoom,
       maxBounds: L.latLngBounds(MAP_CONFIG.maxBounds),
-      maxBoundsViscosity: 1.0,   // Hard stop at edges — no elastic panning
-      preferCanvas: true,         // Canvas renderer: 2-5x faster than SVG at 50+ markers
+      maxBoundsViscosity: 1.0, // Hard stop at edges — no elastic panning
+      preferCanvas: true, // Canvas renderer: 2-5x faster than SVG at 50+ markers
       zoomControl: true,
       attributionControl: true,
     });
@@ -64,9 +65,9 @@ export default function MapContent({ incidents }: MapContentProps) {
     // Initialize empty cluster group
     const clusterGroup = L.markerClusterGroup({
       maxClusterRadius: 50,
-      disableClusteringAtZoom: 16,  // Show individual markers at street level
+      disableClusteringAtZoom: 16, // Show individual markers at street level
       spiderfyOnMaxZoom: true,
-      chunkedLoading: true,          // Process in chunks — prevents UI freeze
+      chunkedLoading: true, // Process in chunks — prevents UI freeze
       chunkInterval: 50,
       chunkDelay: 10,
     });
@@ -146,7 +147,7 @@ export default function MapContent({ incidents }: MapContentProps) {
           `;
           return el;
         },
-        { maxWidth: 280 }
+        { maxWidth: 280 },
       );
 
       cluster.addLayer(marker);
