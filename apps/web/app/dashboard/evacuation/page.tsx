@@ -1,8 +1,9 @@
 // apps/web/app/dashboard/evacuation/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { Building2, MapPin, Users, Phone, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Building2, MapPin, Phone, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
 import { createClient } from "../../../lib/supabase/client";
 
 const supabase = createClient();
@@ -20,10 +21,15 @@ interface EvacCenter {
   updated_at: string;
 }
 
-export default function EvacuationPage() {
+function EvacuationPageInner() {
+  const searchParams = useSearchParams();
+  const focusId = searchParams.get("focus");
+
   const [centers, setCenters] = useState<EvacCenter[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
+
+  const focusedCardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function fetch() {
@@ -39,6 +45,15 @@ export default function EvacuationPage() {
     fetch();
   }, []);
 
+  // Scroll the focused card into view after data loads
+  useEffect(() => {
+    if (!focusId || isLoading) return;
+    const t = setTimeout(() => {
+      focusedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+    return () => clearTimeout(t);
+  }, [focusId, isLoading, centers]);
+
   async function toggleOpen(center: EvacCenter) {
     setToggling(center.id);
     const newOpen = !center.is_open;
@@ -47,7 +62,7 @@ export default function EvacuationPage() {
       .from("evacuation_centers")
       .update({
         is_open: newOpen,
-        current_occupancy: newOpen ? center.current_occupancy : 0, // Reset occupancy when closing
+        current_occupancy: newOpen ? center.current_occupancy : 0,
       })
       .eq("id", center.id);
 
@@ -121,10 +136,20 @@ export default function EvacuationPage() {
           {centers.map((c) => {
             const occupancyPct = c.capacity ? Math.round((c.current_occupancy / c.capacity) * 100) : 0;
             const isFull = c.capacity ? c.current_occupancy >= c.capacity : false;
+            const isFocused = c.id === focusId;
 
             return (
-              <div key={c.id} className={`rounded-xl border p-4 ${c.is_open ? "border-emerald-500/20 bg-gray-900" : "border-gray-800 bg-gray-900 opacity-60"}`}>
-                {/* Header */}
+              <div
+                key={c.id}
+                ref={isFocused ? focusedCardRef : null}
+                className={`rounded-xl border p-4 transition-all ${
+                  isFocused
+                    ? "border-blue-500 ring-2 ring-blue-500/50 bg-gray-900"
+                    : c.is_open
+                    ? "border-emerald-500/20 bg-gray-900"
+                    : "border-gray-800 bg-gray-900 opacity-60"
+                }`}
+              >
                 <div className="mb-3 flex items-start justify-between">
                   <div>
                     <h4 className="text-sm font-medium text-white">{c.name}</h4>
@@ -133,7 +158,6 @@ export default function EvacuationPage() {
                       {c.barangay}
                     </div>
                   </div>
-                  {/* Open/Close toggle */}
                   <button
                     onClick={() => toggleOpen(c)}
                     disabled={toggling === c.id}
@@ -150,7 +174,6 @@ export default function EvacuationPage() {
                   </button>
                 </div>
 
-                {/* Capacity bar */}
                 {c.is_open && c.capacity && (
                   <div className="mb-3">
                     <div className="mb-1 flex items-center justify-between text-[10px]">
@@ -167,30 +190,16 @@ export default function EvacuationPage() {
                         style={{ width: `${Math.min(occupancyPct, 100)}%` }}
                       />
                     </div>
-                    {/* +/- occupancy controls */}
                     <div className="mt-2 flex items-center gap-2">
-                      <button
-                        onClick={() => updateOccupancy(c.id, -5)}
-                        className="rounded bg-gray-700 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-600"
-                      >-5</button>
-                      <button
-                        onClick={() => updateOccupancy(c.id, -1)}
-                        className="rounded bg-gray-700 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-600"
-                      >-1</button>
+                      <button onClick={() => updateOccupancy(c.id, -5)} className="rounded bg-gray-700 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-600">-5</button>
+                      <button onClick={() => updateOccupancy(c.id, -1)} className="rounded bg-gray-700 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-600">-1</button>
                       <span className="flex-1 text-center text-xs text-gray-400">{c.current_occupancy}</span>
-                      <button
-                        onClick={() => updateOccupancy(c.id, 1)}
-                        className="rounded bg-gray-700 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-600"
-                      >+1</button>
-                      <button
-                        onClick={() => updateOccupancy(c.id, 5)}
-                        className="rounded bg-gray-700 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-600"
-                      >+5</button>
+                      <button onClick={() => updateOccupancy(c.id, 1)} className="rounded bg-gray-700 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-600">+1</button>
+                      <button onClick={() => updateOccupancy(c.id, 5)} className="rounded bg-gray-700 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-600">+5</button>
                     </div>
                   </div>
                 )}
 
-                {/* Facilities & contact */}
                 <div className="space-y-1 text-xs text-gray-500">
                   {c.facilities && c.facilities.length > 0 && (
                     <p>Facilities: {c.facilities.join(", ")}</p>
@@ -208,5 +217,13 @@ export default function EvacuationPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function EvacuationPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-gray-500">Loading...</div>}>
+      <EvacuationPageInner />
+    </Suspense>
   );
 }

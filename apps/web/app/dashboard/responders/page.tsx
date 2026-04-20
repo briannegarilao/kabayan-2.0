@@ -1,17 +1,24 @@
 // apps/web/app/dashboard/responders/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { Users, MapPin, Clock, Truck, Radio, CircleDot, Wifi, WifiOff } from "lucide-react";
+import { Users, Clock, Truck, Wifi, WifiOff } from "lucide-react";
 import { createClient } from "../../../lib/supabase/client";
 import type { Responder } from "../../../lib/types";
 
 const supabase = createClient();
 
-export default function RespondersPage() {
+function RespondersPageInner() {
+  const searchParams = useSearchParams();
+  const focusId = searchParams.get("focus");
+
   const [responders, setResponders] = useState<Responder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Ref for the card we want to scroll into view when ?focus=<id> is present
+  const focusedCardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function fetch() {
@@ -31,7 +38,7 @@ export default function RespondersPage() {
 
     // Subscribe to responder location updates
     const channel = supabase
-      .channel("responder-updates")
+      .channel(`responder-updates-${Date.now()}`)
       .on("postgres_changes", {
         event: "*",
         schema: "public",
@@ -47,6 +54,16 @@ export default function RespondersPage() {
 
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  // Scroll the focused card into view after data loads
+  useEffect(() => {
+    if (!focusId || isLoading) return;
+    // Small delay to ensure DOM is rendered
+    const t = setTimeout(() => {
+      focusedCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+    return () => clearTimeout(t);
+  }, [focusId, isLoading, responders]);
 
   const available = responders.filter((r) => r.is_available);
   const onDuty = responders.filter((r) => !r.is_available);
@@ -86,57 +103,71 @@ export default function RespondersPage() {
             <p className="text-xs text-gray-600">Responders are added via the mobile app.</p>
           </div>
         ) : (
-          responders.map((r) => (
-            <div
-              key={r.id}
-              className={`rounded-xl border p-4 ${
-                r.is_available
-                  ? "border-emerald-500/20 bg-gray-900"
-                  : "border-amber-500/20 bg-gray-900"
-              }`}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className={`h-2 w-2 rounded-full ${r.is_available ? "bg-emerald-400" : "bg-amber-400"}`} />
-                  <span className="text-sm font-medium text-gray-200">
-                    {r.team_name || "Responder"}
+          responders.map((r) => {
+            const isFocused = r.id === focusId;
+            return (
+              <div
+                key={r.id}
+                ref={isFocused ? focusedCardRef : null}
+                className={`rounded-xl border p-4 transition-all ${
+                  isFocused
+                    ? "border-blue-500 ring-2 ring-blue-500/50 bg-gray-900"
+                    : r.is_available
+                    ? "border-emerald-500/20 bg-gray-900"
+                    : "border-amber-500/20 bg-gray-900"
+                }`}
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`h-2 w-2 rounded-full ${r.is_available ? "bg-emerald-400" : "bg-amber-400"}`} />
+                    <span className="text-sm font-medium text-gray-200">
+                      {r.team_name || "Responder"}
+                    </span>
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    r.is_available
+                      ? "bg-emerald-400/10 text-emerald-400"
+                      : "bg-amber-400/10 text-amber-400"
+                  }`}>
+                    {r.is_available ? "Available" : "On Duty"}
                   </span>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                  r.is_available
-                    ? "bg-emerald-400/10 text-emerald-400"
-                    : "bg-amber-400/10 text-amber-400"
-                }`}>
-                  {r.is_available ? "Available" : "On Duty"}
-                </span>
-              </div>
 
-              <div className="space-y-1.5 text-xs text-gray-400">
-                {r.vehicle_type && (
-                  <div className="flex items-center gap-1.5">
-                    <Truck className="h-3 w-3 text-gray-600" />
-                    {r.vehicle_type}
-                  </div>
-                )}
-                <div className="flex items-center gap-1.5">
-                  {r.current_location ? (
-                    <Wifi className="h-3 w-3 text-emerald-500" />
-                  ) : (
-                    <WifiOff className="h-3 w-3 text-gray-600" />
+                <div className="space-y-1.5 text-xs text-gray-400">
+                  {r.vehicle_type && (
+                    <div className="flex items-center gap-1.5">
+                      <Truck className="h-3 w-3 text-gray-600" />
+                      {r.vehicle_type}
+                    </div>
                   )}
-                  {r.current_location ? "GPS Active" : "No GPS signal"}
-                </div>
-                {r.last_location_update && (
                   <div className="flex items-center gap-1.5">
-                    <Clock className="h-3 w-3 text-gray-600" />
-                    Last update: {formatDistanceToNow(new Date(r.last_location_update), { addSuffix: true })}
+                    {r.current_location ? (
+                      <Wifi className="h-3 w-3 text-emerald-500" />
+                    ) : (
+                      <WifiOff className="h-3 w-3 text-gray-600" />
+                    )}
+                    {r.current_location ? "GPS Active" : "No GPS signal"}
                   </div>
-                )}
+                  {r.last_location_update && (
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3 w-3 text-gray-600" />
+                      Last update: {formatDistanceToNow(new Date(r.last_location_update), { addSuffix: true })}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
+  );
+}
+
+export default function RespondersPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-gray-500">Loading...</div>}>
+      <RespondersPageInner />
+    </Suspense>
   );
 }

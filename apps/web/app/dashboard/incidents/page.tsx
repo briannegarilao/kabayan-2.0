@@ -1,19 +1,32 @@
 // apps/web/app/dashboard/incidents/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useRealtimeIncidents } from "../../../hooks/useRealtimeIncidents";
 import { IncidentFilters } from "../../../components/incidents/IncidentFilters";
 import { IncidentList } from "../../../components/incidents/IncidentList";
 import { IncidentDetail } from "../../../components/incidents/IncidentDetail";
 import type { SOSIncident } from "../../../lib/types";
 
-export default function IncidentsPage() {
+// Inner component so we can wrap with Suspense (required for useSearchParams)
+function IncidentsPageInner() {
   const { incidents, isLoading } = useRealtimeIncidents();
+  const searchParams = useSearchParams();
+  const focusId = searchParams.get("focus");
+
   const [selectedIncident, setSelectedIncident] = useState<SOSIncident | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // If ?focus=<id> was passed from the Live Map, auto-select that incident
+  // once the list loads.
+  useEffect(() => {
+    if (!focusId || isLoading) return;
+    const match = incidents.find((i) => i.id === focusId);
+    if (match) setSelectedIncident(match);
+  }, [focusId, isLoading, incidents]);
 
   // Apply filters
   const filtered = incidents.filter((inc) => {
@@ -62,5 +75,13 @@ export default function IncidentsPage() {
         />
       </div>
     </div>
+  );
+}
+
+export default function IncidentsPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-gray-500">Loading...</div>}>
+      <IncidentsPageInner />
+    </Suspense>
   );
 }
