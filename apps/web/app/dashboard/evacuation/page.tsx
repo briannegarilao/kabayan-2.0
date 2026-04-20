@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Building2, MapPin, Phone, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
 import { createClient } from "../../../lib/supabase/client";
+import { useBarangayFilter } from "../../../lib/barangay-filter";
 
 const supabase = createClient();
 
@@ -22,6 +23,7 @@ interface EvacCenter {
 }
 
 function EvacuationPageInner() {
+  const { selectedBarangay } = useBarangayFilter();
   const searchParams = useSearchParams();
   const focusId = searchParams.get("focus");
 
@@ -33,19 +35,24 @@ function EvacuationPageInner() {
 
   useEffect(() => {
     async function fetch() {
-      const { data } = await supabase
+      let q = supabase
         .from("evacuation_centers")
         .select("id, name, barangay, address, capacity, current_occupancy, is_open, contact_number, facilities, updated_at")
         .order("is_open", { ascending: false })
         .order("name");
 
+      if (selectedBarangay) {
+        q = q.eq("barangay", selectedBarangay);
+      }
+
+      const { data } = await q;
+
       setCenters((data as EvacCenter[]) || []);
       setIsLoading(false);
     }
     fetch();
-  }, []);
+  }, [selectedBarangay]);
 
-  // Scroll the focused card into view after data loads
   useEffect(() => {
     if (!focusId || isLoading) return;
     const t = setTimeout(() => {
@@ -106,10 +113,11 @@ function EvacuationPageInner() {
 
   return (
     <div className="space-y-5">
-      {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
-          <p className="text-xs text-gray-500">Total Centers</p>
+          <p className="text-xs text-gray-500">
+            {selectedBarangay ? `Centers (${selectedBarangay})` : "Total Centers"}
+          </p>
           <p className="mt-1 text-2xl font-bold text-white">{centers.length}</p>
         </div>
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-400/10 p-4">
@@ -124,11 +132,14 @@ function EvacuationPageInner() {
         </div>
       </div>
 
-      {/* Center cards */}
       {centers.length === 0 ? (
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
           <Building2 className="mx-auto mb-2 h-8 w-8 text-gray-600" />
-          <p className="text-sm text-gray-400">No evacuation centers registered.</p>
+          <p className="text-sm text-gray-400">
+            {selectedBarangay
+              ? `No evacuation centers in ${selectedBarangay}.`
+              : "No evacuation centers registered."}
+          </p>
           <p className="text-xs text-gray-600">Add centers via the Supabase Table Editor.</p>
         </div>
       ) : (

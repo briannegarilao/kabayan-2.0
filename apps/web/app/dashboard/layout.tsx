@@ -3,13 +3,14 @@ import { redirect } from "next/navigation";
 import { createClient } from "../../lib/supabase/server";
 import { Sidebar } from "../../components/dashboard/Sidebar";
 import { Header } from "../../components/dashboard/Header";
+import { BarangayFilterProvider } from "../../lib/barangay-filter";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // Server-side auth check — if no user, redirect to login
+  // Server-side auth check
   const supabase = await createClient();
   const {
     data: { user },
@@ -19,7 +20,7 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
-  // Fetch the user's profile for the sidebar/header
+  // Fetch the user's profile
   const { data: profile } = await supabase
     .from("users")
     .select("full_name, role, barangay")
@@ -34,20 +35,19 @@ export default async function DashboardLayout({
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-950">
-      {/* Sidebar — fixed left */}
-      <Sidebar userProfile={userProfile} />
+    <BarangayFilterProvider
+      userBarangay={userProfile.barangay || null}
+      userRole={userProfile.role}
+    >
+      <div className="flex h-screen overflow-hidden bg-gray-950">
+        <Sidebar userProfile={userProfile} />
 
-      {/* Main content area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top header bar */}
-        <Header userProfile={userProfile} />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Header userProfile={userProfile} />
 
-        {/* Page content — scrollable */}
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
-        </main>
+          <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </BarangayFilterProvider>
   );
 }

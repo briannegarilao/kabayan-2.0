@@ -7,11 +7,15 @@ import { useRealtimeIncidents } from "../../../hooks/useRealtimeIncidents";
 import { IncidentFilters } from "../../../components/incidents/IncidentFilters";
 import { IncidentList } from "../../../components/incidents/IncidentList";
 import { IncidentDetail } from "../../../components/incidents/IncidentDetail";
+import { useBarangayFilter } from "../../../lib/barangay-filter";
 import type { SOSIncident } from "../../../lib/types";
 
-// Inner component so we can wrap with Suspense (required for useSearchParams)
 function IncidentsPageInner() {
-  const { incidents, isLoading } = useRealtimeIncidents();
+  const { selectedBarangay } = useBarangayFilter();
+  // The hook already accepts a barangay prop — pass the universal filter.
+  const { incidents, isLoading } = useRealtimeIncidents(
+    selectedBarangay ?? undefined
+  );
   const searchParams = useSearchParams();
   const focusId = searchParams.get("focus");
 
@@ -20,15 +24,17 @@ function IncidentsPageInner() {
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // If ?focus=<id> was passed from the Live Map, auto-select that incident
-  // once the list loads.
   useEffect(() => {
     if (!focusId || isLoading) return;
     const match = incidents.find((i) => i.id === focusId);
     if (match) setSelectedIncident(match);
   }, [focusId, isLoading, incidents]);
 
-  // Apply filters
+  // When barangay filter changes, clear any stale selection
+  useEffect(() => {
+    setSelectedIncident(null);
+  }, [selectedBarangay]);
+
   const filtered = incidents.filter((inc) => {
     if (statusFilter !== "all" && inc.status !== statusFilter) return false;
     if (severityFilter !== "all" && inc.flood_severity !== severityFilter) return false;
@@ -44,7 +50,6 @@ function IncidentsPageInner() {
 
   return (
     <div className="flex h-[calc(100vh-8rem)] gap-5">
-      {/* Left panel: filters + list */}
       <div className="flex w-full flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900 lg:w-2/3">
         <IncidentFilters
           statusFilter={statusFilter}
@@ -64,14 +69,10 @@ function IncidentsPageInner() {
         />
       </div>
 
-      {/* Right panel: detail view */}
       <div className="hidden w-1/3 overflow-hidden rounded-xl border border-gray-800 bg-gray-900 lg:block">
         <IncidentDetail
           incident={selectedIncident}
-          onStatusUpdate={() => {
-            // Real-time subscription will auto-update the list
-            setSelectedIncident(null);
-          }}
+          onStatusUpdate={() => setSelectedIncident(null)}
         />
       </div>
     </div>

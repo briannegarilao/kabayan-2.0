@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   AlertTriangle,
@@ -15,7 +15,7 @@ import {
   Map as MapIcon,
 } from "lucide-react";
 import { createClient } from "../../lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { BarangayFilter } from "./BarangayFilter";
 
 interface UserProfile {
   fullName: string;
@@ -25,41 +25,13 @@ interface UserProfile {
 }
 
 const navItems = [
-  {
-    label: "Overview",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    label: "Incidents",
-    href: "/dashboard/incidents",
-    icon: AlertTriangle,
-  },
-  {
-    label: "Responders",
-    href: "/dashboard/responders",
-    icon: Users,
-  },
-  {
-    label: "Live Map",
-    href: "/dashboard/map",
-    icon: MapIcon,
-  },
-  {
-    label: "Analytics",
-    href: "/dashboard/analytics",
-    icon: BarChart3,
-  },
-  {
-    label: "Evacuation",
-    href: "/dashboard/evacuation",
-    icon: Building2,
-  },
-  {
-    label: "Announcements",
-    href: "/dashboard/announcements",
-    icon: Megaphone,
-  },
+  { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Incidents", href: "/dashboard/incidents", icon: AlertTriangle },
+  { label: "Responders", href: "/dashboard/responders", icon: Users },
+  { label: "Live Map", href: "/dashboard/map", icon: MapIcon },
+  { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
+  { label: "Evacuation", href: "/dashboard/evacuation", icon: Building2 },
+  { label: "Announcements", href: "/dashboard/announcements", icon: Megaphone },
 ];
 
 export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
@@ -73,7 +45,6 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
     router.refresh();
   }
 
-  // Format role for display
   const roleDisplay =
     userProfile.role === "lgu_admin"
       ? "LGU Administrator"
@@ -96,42 +67,48 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
-        {navItems.map((item) => {
-          // Exact match for /dashboard, startsWith for sub-pages
-          const isActive =
-            item.href === "/dashboard"
-              ? pathname === "/dashboard"
-              : pathname.startsWith(item.href);
+      {/* Scrollable middle section (nav + filter) */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Navigation */}
+        <nav className="space-y-1 px-3 py-4">
+          {navItems.map((item) => {
+            const isActive =
+              item.href === "/dashboard"
+                ? pathname === "/dashboard"
+                : pathname.startsWith(item.href);
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-blue-600/10 text-blue-400"
-                  : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"
-              }`}
-            >
-              <item.icon
-                className={`h-[18px] w-[18px] ${
-                  isActive ? "text-blue-400" : "text-gray-500"
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-blue-600/10 text-blue-400"
+                    : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"
                 }`}
-              />
-              {item.label}
+              >
+                <item.icon
+                  className={`h-[18px] w-[18px] ${
+                    isActive ? "text-blue-400" : "text-gray-500"
+                  }`}
+                />
+                {item.label}
 
-              {/* Active indicator bar */}
-              {isActive && (
-                <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />
-              )}
-            </Link>
-          );
-        })}
-      </nav>
+                {isActive && (
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />
+                )}
+              </Link>
+            );
+          })}
+        </nav>
 
-      {/* User profile + sign out at the bottom */}
+        {/* Universal barangay filter */}
+        <div className="mx-3 mb-4 rounded-lg border border-gray-800 bg-gray-900/50 p-3">
+          <BarangayFilter />
+        </div>
+      </div>
+
+      {/* User profile + sign out */}
       <div className="border-t border-gray-800 p-4">
         <div className="mb-3">
           <p className="truncate text-sm font-medium text-gray-200">

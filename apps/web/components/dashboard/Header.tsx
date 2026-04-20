@@ -4,6 +4,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Wifi, WifiOff, Clock } from "lucide-react";
+import { BarangayFilterIndicator } from "./BarangayFilterIndicator";
 
 interface UserProfile {
   fullName: string;
@@ -12,7 +13,6 @@ interface UserProfile {
   email: string;
 }
 
-// Map routes to readable page titles
 const pageTitles: Record<string, string> = {
   "/dashboard": "Overview",
   "/dashboard/incidents": "Incident Management",
@@ -28,7 +28,6 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [isOnline, setIsOnline] = useState(true);
 
-  // Live clock (Philippine time)
   useEffect(() => {
     function updateTime() {
       setCurrentTime(
@@ -46,7 +45,6 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Online/offline detection
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -79,9 +77,10 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
         </p>
       </div>
 
-      {/* Right: Status indicators */}
+      {/* Right: barangay indicator + connection + clock */}
       <div className="flex items-center gap-4">
-        {/* Connection status */}
+        <BarangayFilterIndicator />
+
         <div
           className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
             isOnline
@@ -89,15 +88,10 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
               : "bg-red-500/10 text-red-400"
           }`}
         >
-          {isOnline ? (
-            <Wifi className="h-3 w-3" />
-          ) : (
-            <WifiOff className="h-3 w-3" />
-          )}
+          {isOnline ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
           {isOnline ? "Connected" : "Offline"}
         </div>
 
-        {/* Live clock */}
         <div className="flex items-center gap-1.5 text-xs text-gray-400">
           <Clock className="h-3 w-3" />
           <span className="font-mono">{currentTime}</span>
