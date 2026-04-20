@@ -38,6 +38,11 @@ interface SOSIncident {
   location: any;
   created_at: string;
 }
+
+// CRITICAL CHANGE: `public.responders` does NOT have a `barangay` column.
+// The `barangay` lives on `public.users` (responders.id is FK → users.id).
+// We fetch it via the embedded `users!inner(barangay)` select and flatten
+// into `home_barangay` on the client.
 interface Responder {
   id: string;
   team_name: string | null;
@@ -47,8 +52,9 @@ interface Responder {
   max_capacity: number | null;
   current_location: any;
   last_location_update: string | null;
-  barangay?: string | null;
+  home_barangay: string | null;
 }
+
 interface EvacCenter {
   id: string;
   name: string;
@@ -58,12 +64,14 @@ interface EvacCenter {
   is_open: boolean;
   location: any;
 }
+
 interface TripPlan {
   id: string;
   responder_id: string;
   status: string;
   stops: any[];
 }
+
 type TabId = "sos" | "responders" | "evacs";
 
 // ── Icon factories ────────────────────────────────────────────
@@ -155,7 +163,7 @@ function buildResponderPopup(r: Responder): HTMLElement {
     <div style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;">
       <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${r.team_name || "Responder"}</div>
       <div style="color:#9ca3af;margin-bottom:4px;">${r.vehicle_type || "—"}</div>
-      ${r.barangay ? `<div style="color:#9ca3af;margin-bottom:4px;font-size:11px;">Home: ${r.barangay}</div>` : ""}
+      ${r.home_barangay ? `<div style="color:#9ca3af;margin-bottom:4px;font-size:11px;">Home: ${r.home_barangay}</div>` : ""}
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
         <span style="width:8px;height:8px;border-radius:50%;background:${statusColor};"></span>
         <span style="color:${statusColor};font-weight:600;font-size:11px;">${r.is_available ? "Available" : "On Trip"}</span>
@@ -193,7 +201,7 @@ function tripColor(responderId: string): string {
   return TRIP_COLORS[hash % TRIP_COLORS.length];
 }
 
-// ── GeoJSON types for the boundary files we load ──────────────
+// ── GeoJSON types ─────────────────────────────────────────────
 interface BoundaryGeoJSON {
   type: "Feature";
   properties: { name: string };
@@ -222,13 +230,11 @@ export default function LiveMapView() {
   const routeLayerRef = useRef<L.LayerGroup | null>(null);
   const heatLayerRef = useRef<any>(null);
 
-  // Boundary layer refs
   const maskLayerRef = useRef<L.Polygon | null>(null);
   const cityOutlineRef = useRef<L.GeoJSON | null>(null);
   const barangaysLayerRef = useRef<L.GeoJSON | null>(null);
   const highlightLayerRef = useRef<L.GeoJSON | null>(null);
 
-  // Marker registries for list-click → popup
   const sosMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const responderMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const evacMarkersRef = useRef<Map<string, L.Marker>>(new Map());
@@ -239,11 +245,9 @@ export default function LiveMapView() {
   const [evacCenters, setEvacCenters] = useState<EvacCenter[]>([]);
   const [activeTrips, setActiveTrips] = useState<TripPlan[]>([]);
 
-  // Loaded GeoJSON
   const [cityBoundary, setCityBoundary] = useState<BoundaryGeoJSON | null>(null);
   const [barangays, setBarangays] = useState<BarangaysGeoJSON | null>(null);
 
-  // Layer visibility
   const [showSOS, setShowSOS] = useState(true);
   const [showResponders, setShowResponders] = useState(true);
   const [showEvacs, setShowEvacs] = useState(true);
@@ -252,7 +256,6 @@ export default function LiveMapView() {
   const [heatmapMode, setHeatmapMode] = useState(false);
   const [sosStatusFilter, setSosStatusFilter] = useState<string>("active");
 
-  // List panel state
   const [activeTab, setActiveTab] = useState<TabId>("evacs");
   const [listSearch, setListSearch] = useState("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -270,9 +273,7 @@ export default function LiveMapView() {
         setBarangays(brgy as BarangaysGeoJSON);
       })
       .catch((err) => console.error("Failed to load boundary GeoJSON:", err));
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   // ── INIT MAP ────────────────────────────────────────────────
@@ -338,23 +339,13 @@ export default function LiveMapView() {
   }, []);
 
   // ── RENDER BOUNDARY OVERLAYS ────────────────────────────────
-  // - Mask: outer=world rectangle, inner=Dasma boundary (creates dim outside)
-  // - City outline: thin bold line around Dasma
-  // - Barangays: thin gray lines for each of the 74 barangays
-  // All with `interactive: false` so they never block marker clicks.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !cityBoundary || !barangays) return;
 
-    // --- 1. Mask (dim outside Dasma) ---
-    // Leaflet polygon takes [outerRing, innerRing1, innerRing2...] where each
-    // ring is [[lat, lng], ...]. GeoJSON is [lng, lat], so we flip.
     const dasmaRing: [number, number][] = cityBoundary.geometry.coordinates[0].map(
       ([lng, lat]) => [lat, lng]
     );
-    // World rectangle — covers visible world. We use the allowed map bounds
-    // (Dasmariñas area) padded slightly, since maxBounds restricts panning
-    // anyway — anything further is unreachable.
     const worldRing: [number, number][] = [
       [14.10, 120.60],
       [14.10, 121.30],
@@ -363,9 +354,8 @@ export default function LiveMapView() {
     ];
 
     const mask = L.polygon([worldRing, dasmaRing], {
-      // Transparent-ish dim — lets underlying tiles show through
       color: "transparent",
-      fillColor: "#020617", // slate-950, very dark
+      fillColor: "#020617",
       fillOpacity: 0.55,
       stroke: false,
       interactive: false,
@@ -373,10 +363,9 @@ export default function LiveMapView() {
     mask.addTo(map);
     maskLayerRef.current = mask;
 
-    // --- 2. City outline ---
     const cityOutline = L.geoJSON(cityBoundary as any, {
       style: {
-        color: "#60a5fa", // blue-400
+        color: "#60a5fa",
         weight: 2.5,
         opacity: 0.9,
         fill: false,
@@ -387,14 +376,13 @@ export default function LiveMapView() {
     cityOutline.addTo(map);
     cityOutlineRef.current = cityOutline;
 
-    // --- 3. Barangay outlines ---
     const brgyLayer = L.geoJSON(barangays as any, {
       style: {
-        color: "#64748b", // slate-500
+        color: "#64748b",
         weight: 0.8,
         opacity: 0.6,
         fillColor: "#94a3b8",
-        fillOpacity: 0.0, // invisible fill; hover raises it
+        fillOpacity: 0.0,
         interactive: false,
       } as any,
       interactive: false,
@@ -402,13 +390,10 @@ export default function LiveMapView() {
     brgyLayer.addTo(map);
     barangaysLayerRef.current = brgyLayer;
 
-    // Keep the visual stack predictable:
-    // tiles (bottom) → mask → city outline → barangays → markers (top)
     mask.bringToBack();
     cityOutline.bringToBack();
-    // barangays stay between outline and markers; markers are on a separate pane so they're above
     brgyLayer.bringToBack();
-    mask.bringToBack(); // mask should be lowest over tiles
+    mask.bringToBack();
 
     return () => {
       if (maskLayerRef.current) map.removeLayer(maskLayerRef.current);
@@ -420,7 +405,6 @@ export default function LiveMapView() {
     };
   }, [cityBoundary, barangays]);
 
-  // ── Toggle barangay layer visibility ─────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     const layer = barangaysLayerRef.current;
@@ -432,31 +416,24 @@ export default function LiveMapView() {
     }
   }, [showBarangays]);
 
-  // ── Highlight selected barangay + fit bounds ─────────────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    // Remove previous highlight
     if (highlightLayerRef.current) {
       map.removeLayer(highlightLayerRef.current);
       highlightLayerRef.current = null;
     }
 
     if (!selectedBarangay || !barangays) {
-      // When cleared, fly back to the default city view
       if (!selectedBarangay && cityBoundary) {
-        map.flyTo(MAP_CONFIG.defaultCenter, MAP_CONFIG.defaultZoom, {
-          duration: 0.9,
-        });
+        map.flyTo(MAP_CONFIG.defaultCenter, MAP_CONFIG.defaultZoom, { duration: 0.9 });
       }
       return;
     }
 
-    // Find the selected barangay feature (case-insensitive)
     const feat = barangays.features.find(
-      (f) =>
-        f.properties.name.toLowerCase() === selectedBarangay.toLowerCase()
+      (f) => f.properties.name.toLowerCase() === selectedBarangay.toLowerCase()
     );
     if (!feat) return;
 
@@ -474,18 +451,15 @@ export default function LiveMapView() {
     highlight.addTo(map);
     highlightLayerRef.current = highlight;
 
-    // Fit the map to this barangay
     const bounds = highlight.getBounds();
     if (bounds.isValid()) {
       map.flyToBounds(bounds, { duration: 0.9, padding: [40, 40] });
     }
   }, [selectedBarangay, barangays, cityBoundary]);
 
-  // ── DATA FETCH (respects barangay filter server-side) ───────
-  // Incidents + evac centers can filter server-side by barangay column.
-  // Responders we fetch ALL because their CURRENT_LOCATION is what matters,
-  // not their home barangay — we still want to see them on the map even if
-  // they've left their barangay.
+  // ── DATA FETCH ──────────────────────────────────────────────
+  // Responders: fetched via INNER JOIN on users so we have home barangay.
+  // When filter is active, we filter ON the joined users.barangay column.
   useEffect(() => {
     (async () => {
       let incQ = supabase
@@ -500,31 +474,56 @@ export default function LiveMapView() {
         .select("id, name, barangay, capacity, current_occupancy, is_open, location");
       if (selectedBarangay) evacQ = evacQ.eq("barangay", selectedBarangay);
 
+      // For responders we always fetch ALL so markers remain visible on the
+      // map even when they've left their home barangay. The sidebar list
+      // filters client-side.
+      const responderSelect = `
+        id, team_name, vehicle_type, is_available, current_load, max_capacity,
+        current_location, last_location_update,
+        users:users!inner(barangay)
+      `;
+
       const [incRes, respRes, evacRes, tripRes] = await Promise.all([
         incQ,
-        // Responders: always fetch all; we filter in the list panel only.
-        // Markers stay on the map so you can still see a Salitran responder
-        // visiting a different barangay.
-        supabase
-          .from("responders")
-          .select(
-            "id, team_name, vehicle_type, is_available, current_load, max_capacity, current_location, last_location_update, barangay"
-          ),
+        supabase.from("responders").select(responderSelect),
         evacQ,
-        supabase
-          .from("trip_plans")
-          .select("id, responder_id, status, stops")
-          .eq("status", "active"),
+        supabase.from("trip_plans").select("id, responder_id, status, stops").eq("status", "active"),
       ]);
 
+      if (incRes.error) console.error("incidents error:", incRes.error);
+      if (respRes.error) console.error("responders error:", respRes.error);
+      if (evacRes.error) console.error("evacs error:", evacRes.error);
+
       if (incRes.data) setIncidents(incRes.data as SOSIncident[]);
-      if (respRes.data) setResponders(respRes.data as Responder[]);
+      if (respRes.data) {
+        // Flatten users.barangay → home_barangay. Note that PostgREST returns
+        // embedded relations as either an object (many-to-one) or array
+        // depending on FK direction; for responders.id→users.id it's 1:1 so
+        // we get an object, but we handle both to be safe.
+        const flat: Responder[] = (respRes.data as any[]).map((r) => {
+          const u = Array.isArray(r.users) ? r.users[0] : r.users;
+          return {
+            id: r.id,
+            team_name: r.team_name,
+            vehicle_type: r.vehicle_type,
+            is_available: r.is_available,
+            current_load: r.current_load,
+            max_capacity: r.max_capacity,
+            current_location: r.current_location,
+            last_location_update: r.last_location_update,
+            home_barangay: u?.barangay ?? null,
+          };
+        });
+        setResponders(flat);
+      }
       if (evacRes.data) setEvacCenters(evacRes.data as EvacCenter[]);
       if (tripRes.data) setActiveTrips(tripRes.data as TripPlan[]);
     })();
   }, [selectedBarangay]);
 
   // ── REALTIME ────────────────────────────────────────────────
+  // Realtime payloads do NOT include joined data. When a responder row
+  // updates, we preserve the existing home_barangay from our state.
   useEffect(() => {
     const channelId = `livemap-${Date.now()}`;
     const channel = supabase
@@ -549,7 +548,13 @@ export default function LiveMapView() {
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "responders" }, (payload) => {
-        setResponders((prev) => prev.map((r) => (r.id === payload.new.id ? { ...r, ...(payload.new as Responder) } : r)));
+        setResponders((prev) =>
+          prev.map((r) => {
+            if (r.id !== payload.new.id) return r;
+            // Preserve home_barangay from existing state since payload lacks join
+            return { ...r, ...(payload.new as any), home_barangay: r.home_barangay };
+          })
+        );
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "evacuation_centers" }, (payload) => {
         const u = payload.new as EvacCenter;
@@ -628,8 +633,6 @@ export default function LiveMapView() {
   }, [incidents, showSOS, heatmapMode, sosStatusFilter]);
 
   // ── RENDER RESPONDER MARKERS ────────────────────────────────
-  // All responders remain on the map regardless of barangay filter — their
-  // actual location may not be in their home barangay.
   useEffect(() => {
     const layer = responderLayerRef.current;
     if (!layer) return;
@@ -744,13 +747,10 @@ export default function LiveMapView() {
     );
   }, [incidents, sosStatusFilter, listSearch]);
 
-  // Responder list is filtered by home barangay when one is selected,
-  // even though markers remain visible. This matches the intent: "who's
-  // assigned to this barangay" in the list, but keep map truthful.
   const filteredResponders = useMemo(() => {
     let base = responders;
     if (selectedBarangay) {
-      base = base.filter((r) => r.barangay === selectedBarangay);
+      base = base.filter((r) => r.home_barangay === selectedBarangay);
     }
     if (!listSearch.trim()) return base;
     const q = listSearch.toLowerCase();
@@ -781,13 +781,8 @@ export default function LiveMapView() {
     <div className="relative h-full w-full bg-gray-950">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* ══════════════════════════════════════════════════════ */}
-      {/*              LEFT PANEL: FILTERS + LIST              */}
-      {/* ══════════════════════════════════════════════════════ */}
       <div className="absolute left-4 top-4 bottom-4 z-[1000] flex w-80 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900/95 shadow-2xl backdrop-blur">
-        {/* ── FILTER SECTION ── */}
         <div className="border-b border-gray-800 p-4">
-          {/* Active barangay notice */}
           {selectedBarangay && (
             <div className="mb-3 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-600/10 px-2.5 py-1.5 text-xs text-blue-300">
               <MapPin className="h-3.5 w-3.5 shrink-0" />
@@ -795,9 +790,7 @@ export default function LiveMapView() {
             </div>
           )}
 
-          <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-            Map Layers
-          </h3>
+          <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Map Layers</h3>
 
           <div className="space-y-2.5">
             <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
@@ -838,7 +831,6 @@ export default function LiveMapView() {
               <span className="ml-auto text-[10px] text-gray-500">{activeTrips.length}</span>
             </label>
 
-            {/* Barangay boundaries toggle */}
             <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
               <input type="checkbox" checked={showBarangays} onChange={(e) => setShowBarangays(e.target.checked)} className="h-4 w-4 rounded accent-slate-500" />
               <MapPin className="h-4 w-4 text-slate-400" />
@@ -865,7 +857,6 @@ export default function LiveMapView() {
           )}
         </div>
 
-        {/* ── LIST SECTION ── */}
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex border-b border-gray-800">
             <TabButton active={activeTab === "sos"} onClick={() => setActiveTab("sos")} label="SOS" count={activeCounts.sos} color="text-red-400" />
@@ -951,7 +942,6 @@ export default function LiveMapView() {
         </div>
       </div>
 
-      {/* Legend */}
       <div className="absolute bottom-4 right-4 z-[1000] rounded-xl border border-gray-800 bg-gray-900/95 px-3 py-2 shadow-2xl backdrop-blur">
         <div className="flex items-center gap-3 text-[10px] text-gray-400">
           <span className="text-gray-500">Severity:</span>
@@ -972,9 +962,6 @@ export default function LiveMapView() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-//   SUB-COMPONENTS
-// ═══════════════════════════════════════════════════════════════
 function TabButton({
   active, onClick, label, count, color,
 }: {
@@ -1060,6 +1047,9 @@ function ResponderListItem({
               <span>•</span>
               <span>Load {loadPct}%</span>
             </div>
+            {responder.home_barangay && (
+              <div className="mt-0.5 text-[10px] text-gray-600">{responder.home_barangay}</div>
+            )}
           </div>
         </button>
         <button
