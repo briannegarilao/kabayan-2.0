@@ -12,7 +12,6 @@ import { MAP_CONFIG, SEVERITY_COLORS } from "../../lib/map-config";
 import { parseLocation } from "../../lib/types";
 import type { SOSIncident } from "../../lib/types";
 
-// ── GeoJSON types (same as LiveMapView) ──────────────────────
 interface BoundaryGeoJSON {
   type: "Feature";
   properties: { name: string };
@@ -51,10 +50,10 @@ export default function MapContent({ incidents }: MapContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const clusterRef = useRef<L.MarkerClusterGroup | null>(null);
-
   const maskLayerRef = useRef<L.Polygon | null>(null);
   const cityOutlineRef = useRef<L.GeoJSON | null>(null);
   const barangaysLayerRef = useRef<L.GeoJSON | null>(null);
+  const disposedRef = useRef(false);
 
   const [cityBoundary, setCityBoundary] = useState<BoundaryGeoJSON | null>(null);
   const [barangays, setBarangays] = useState<BarangaysGeoJSON | null>(null);
@@ -75,18 +74,19 @@ export default function MapContent({ incidents }: MapContentProps) {
     return () => { cancelled = true; };
   }, []);
 
-  // Initialize map ONCE
+  // Initialize map ONCE — no preferCanvas (SVG renderer avoids clearRect bug)
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
+    disposedRef.current = false;
 
     const map = L.map(containerRef.current, {
       center: MAP_CONFIG.defaultCenter,
       zoom: MAP_CONFIG.defaultZoom,
       maxBounds: L.latLngBounds(MAP_CONFIG.maxBounds),
       maxBoundsViscosity: 1.0,
-      preferCanvas: true,
       zoomControl: true,
       attributionControl: true,
+      // preferCanvas: REMOVED — use SVG renderer to avoid clearRect crash
     });
 
     L.tileLayer(MAP_CONFIG.tileUrl, {
@@ -109,10 +109,18 @@ export default function MapContent({ incidents }: MapContentProps) {
     mapRef.current = map;
     clusterRef.current = clusterGroup;
 
-    setTimeout(() => map.invalidateSize(), 100);
+    const timer = setTimeout(() => {
+      if (!disposedRef.current) map.invalidateSize();
+    }, 100);
 
     return () => {
-      map.remove();
+      disposedRef.current = true;
+      clearTimeout(timer);
+      try {
+        map.remove();
+      } catch (e) {
+        // swallow
+      }
       mapRef.current = null;
       clusterRef.current = null;
       maskLayerRef.current = null;
@@ -124,16 +132,13 @@ export default function MapContent({ incidents }: MapContentProps) {
   // Render boundary overlays once GeoJSON is loaded
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !cityBoundary || !barangays) return;
+    if (!map || !cityBoundary || !barangays || disposedRef.current) return;
 
     const dasmaRing: [number, number][] = cityBoundary.geometry.coordinates[0].map(
       ([lng, lat]) => [lat, lng]
     );
     const worldRing: [number, number][] = [
-      [14.10, 120.60],
-      [14.10, 121.30],
-      [14.55, 121.30],
-      [14.55, 120.60],
+      [14.10, 120.60], [14.10, 121.30], [14.55, 121.30], [14.55, 120.60],
     ];
 
     const mask = L.polygon([worldRing, dasmaRing], {
@@ -147,42 +152,29 @@ export default function MapContent({ incidents }: MapContentProps) {
     maskLayerRef.current = mask;
 
     const cityOutline = L.geoJSON(cityBoundary as any, {
-      style: {
-        color: "#60a5fa",
-        weight: 2.5,
-        opacity: 0.9,
-        fill: false,
-        interactive: false,
-      } as any,
+      style: { color: "#60a5fa", weight: 2.5, opacity: 0.9, fill: false, interactive: false } as any,
       interactive: false,
     });
     cityOutline.addTo(map);
     cityOutlineRef.current = cityOutline;
 
     const brgyLayer = L.geoJSON(barangays as any, {
-      style: {
-        color: "#64748b",
-        weight: 0.8,
-        opacity: 0.6,
-        fillColor: "#94a3b8",
-        fillOpacity: 0.0,
-        interactive: false,
-      } as any,
+      style: { color: "#64748b", weight: 0.8, opacity: 0.6, fillColor: "#94a3b8", fillOpacity: 0.0, interactive: false } as any,
       interactive: false,
     });
     brgyLayer.addTo(map);
     barangaysLayerRef.current = brgyLayer;
 
-    // Push overlays to back so markers are on top
     mask.bringToBack();
     cityOutline.bringToBack();
     brgyLayer.bringToBack();
     mask.bringToBack();
 
     return () => {
-      if (maskLayerRef.current) map.removeLayer(maskLayerRef.current);
-      if (cityOutlineRef.current) map.removeLayer(cityOutlineRef.current);
-      if (barangaysLayerRef.current) map.removeLayer(barangaysLayerRef.current);
+      if (disposedRef.current) return;
+      if (maskLayerRef.current && map.hasLayer(maskLayerRef.current)) map.removeLayer(maskLayerRef.current);
+      if (cityOutlineRef.current && map.hasLayer(cityOutlineRef.current)) map.removeLayer(cityOutlineRef.current);
+      if (barangaysLayerRef.current && map.hasLayer(barangaysLayerRef.current)) map.removeLayer(barangaysLayerRef.current);
       maskLayerRef.current = null;
       cityOutlineRef.current = null;
       barangaysLayerRef.current = null;
@@ -192,7 +184,7 @@ export default function MapContent({ incidents }: MapContentProps) {
   // Update incident markers when list changes
   useEffect(() => {
     const cluster = clusterRef.current;
-    if (!cluster) return;
+    if (!cluster || disposedRef.current) return;
 
     cluster.clearLayers();
 

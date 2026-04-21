@@ -38,11 +38,6 @@ interface SOSIncident {
   location: any;
   created_at: string;
 }
-
-// CRITICAL CHANGE: `public.responders` does NOT have a `barangay` column.
-// The `barangay` lives on `public.users` (responders.id is FK → users.id).
-// We fetch it via the embedded `users!inner(barangay)` select and flatten
-// into `home_barangay` on the client.
 interface Responder {
   id: string;
   team_name: string | null;
@@ -54,7 +49,6 @@ interface Responder {
   last_location_update: string | null;
   home_barangay: string | null;
 }
-
 interface EvacCenter {
   id: string;
   name: string;
@@ -64,14 +58,12 @@ interface EvacCenter {
   is_open: boolean;
   location: any;
 }
-
 interface TripPlan {
   id: string;
   responder_id: string;
   status: string;
   stops: any[];
 }
-
 type TabId = "sos" | "responders" | "evacs";
 
 // ── Icon factories ────────────────────────────────────────────
@@ -110,10 +102,8 @@ function createEvacIcon(isOpen: boolean): L.DivIcon {
   return L.divIcon({
     className: "",
     html: `<div style="
-      position:relative;
-      width:26px;height:26px;background:${color};
-      border:2.5px solid ${strokeColor};
-      border-radius:4px;
+      position:relative;width:26px;height:26px;background:${color};
+      border:2.5px solid ${strokeColor};border-radius:4px;
       box-shadow:0 2px 8px rgba(0,0,0,0.55);
       display:flex;align-items:center;justify-content:center;
     ">
@@ -239,6 +229,10 @@ export default function LiveMapView() {
   const responderMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const evacMarkersRef = useRef<Map<string, L.Marker>>(new Map());
 
+  // Disposal guard — set true in cleanup to prevent any pending async work
+  // from touching a disposed map/canvas.
+  const disposedRef = useRef(false);
+
   // Data state
   const [incidents, setIncidents] = useState<SOSIncident[]>([]);
   const [responders, setResponders] = useState<Responder[]>([]);
@@ -277,15 +271,21 @@ export default function LiveMapView() {
   }, []);
 
   // ── INIT MAP ────────────────────────────────────────────────
+  // CRITICAL: we do NOT use `preferCanvas: true` anymore. The Canvas renderer
+  // has a known bug where a pending _redraw() fires after the map is removed,
+  // causing `Cannot read properties of undefined (reading 'clearRect')`.
+  // The SVG renderer (default) does not have this bug and handles our marker
+  // count (~90) with no performance issue.
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
+    disposedRef.current = false;
 
     const map = L.map(containerRef.current, {
       center: MAP_CONFIG.defaultCenter,
       zoom: MAP_CONFIG.defaultZoom,
       maxBounds: L.latLngBounds(MAP_CONFIG.maxBounds),
       maxBoundsViscosity: 1.0,
-      preferCanvas: true,
+      // preferCanvas: REMOVED — use SVG renderer to avoid clearRect crash
     });
 
     L.tileLayer(MAP_CONFIG.tileUrl, {
@@ -318,10 +318,18 @@ export default function LiveMapView() {
     evacLayerRef.current = evacLayer;
     routeLayerRef.current = routeLayer;
 
-    setTimeout(() => map.invalidateSize(), 100);
+    const invalidateTimer = setTimeout(() => {
+      if (!disposedRef.current) map.invalidateSize();
+    }, 100);
 
     return () => {
-      map.remove();
+      disposedRef.current = true;
+      clearTimeout(invalidateTimer);
+      try {
+        map.remove();
+      } catch (e) {
+        // swallow — cleanup, nothing to do
+      }
       mapRef.current = null;
       sosClusterRef.current = null;
       responderLayerRef.current = null;
@@ -341,16 +349,13 @@ export default function LiveMapView() {
   // ── RENDER BOUNDARY OVERLAYS ────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !cityBoundary || !barangays) return;
+    if (!map || !cityBoundary || !barangays || disposedRef.current) return;
 
     const dasmaRing: [number, number][] = cityBoundary.geometry.coordinates[0].map(
       ([lng, lat]) => [lat, lng]
     );
     const worldRing: [number, number][] = [
-      [14.10, 120.60],
-      [14.10, 121.30],
-      [14.55, 121.30],
-      [14.55, 120.60],
+      [14.10, 120.60], [14.10, 121.30], [14.55, 121.30], [14.55, 120.60],
     ];
 
     const mask = L.polygon([worldRing, dasmaRing], {
@@ -364,27 +369,14 @@ export default function LiveMapView() {
     maskLayerRef.current = mask;
 
     const cityOutline = L.geoJSON(cityBoundary as any, {
-      style: {
-        color: "#60a5fa",
-        weight: 2.5,
-        opacity: 0.9,
-        fill: false,
-        interactive: false,
-      } as any,
+      style: { color: "#60a5fa", weight: 2.5, opacity: 0.9, fill: false, interactive: false } as any,
       interactive: false,
     });
     cityOutline.addTo(map);
     cityOutlineRef.current = cityOutline;
 
     const brgyLayer = L.geoJSON(barangays as any, {
-      style: {
-        color: "#64748b",
-        weight: 0.8,
-        opacity: 0.6,
-        fillColor: "#94a3b8",
-        fillOpacity: 0.0,
-        interactive: false,
-      } as any,
+      style: { color: "#64748b", weight: 0.8, opacity: 0.6, fillColor: "#94a3b8", fillOpacity: 0.0, interactive: false } as any,
       interactive: false,
     });
     brgyLayer.addTo(map);
@@ -396,9 +388,10 @@ export default function LiveMapView() {
     mask.bringToBack();
 
     return () => {
-      if (maskLayerRef.current) map.removeLayer(maskLayerRef.current);
-      if (cityOutlineRef.current) map.removeLayer(cityOutlineRef.current);
-      if (barangaysLayerRef.current) map.removeLayer(barangaysLayerRef.current);
+      if (disposedRef.current) return;
+      if (maskLayerRef.current && map.hasLayer(maskLayerRef.current)) map.removeLayer(maskLayerRef.current);
+      if (cityOutlineRef.current && map.hasLayer(cityOutlineRef.current)) map.removeLayer(cityOutlineRef.current);
+      if (barangaysLayerRef.current && map.hasLayer(barangaysLayerRef.current)) map.removeLayer(barangaysLayerRef.current);
       maskLayerRef.current = null;
       cityOutlineRef.current = null;
       barangaysLayerRef.current = null;
@@ -408,7 +401,7 @@ export default function LiveMapView() {
   useEffect(() => {
     const map = mapRef.current;
     const layer = barangaysLayerRef.current;
-    if (!map || !layer) return;
+    if (!map || !layer || disposedRef.current) return;
     if (showBarangays) {
       if (!map.hasLayer(layer)) map.addLayer(layer);
     } else {
@@ -418,9 +411,9 @@ export default function LiveMapView() {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || disposedRef.current) return;
 
-    if (highlightLayerRef.current) {
+    if (highlightLayerRef.current && map.hasLayer(highlightLayerRef.current)) {
       map.removeLayer(highlightLayerRef.current);
       highlightLayerRef.current = null;
     }
@@ -438,14 +431,7 @@ export default function LiveMapView() {
     if (!feat) return;
 
     const highlight = L.geoJSON(feat as any, {
-      style: {
-        color: "#3b82f6",
-        weight: 3,
-        opacity: 1,
-        fillColor: "#3b82f6",
-        fillOpacity: 0.12,
-        interactive: false,
-      } as any,
+      style: { color: "#3b82f6", weight: 3, opacity: 1, fillColor: "#3b82f6", fillOpacity: 0.12, interactive: false } as any,
       interactive: false,
     });
     highlight.addTo(map);
@@ -458,9 +444,12 @@ export default function LiveMapView() {
   }, [selectedBarangay, barangays, cityBoundary]);
 
   // ── DATA FETCH ──────────────────────────────────────────────
-  // Responders: fetched via INNER JOIN on users so we have home barangay.
-  // When filter is active, we filter ON the joined users.barangay column.
+  // TWO-QUERY approach for responders: fetch responders AND role='responder'
+  // users separately, merge by id. This avoids any FK / schema-cache / RLS
+  // issues with the `users:users!inner(barangay)` embed syntax.
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       let incQ = supabase
         .from("sos_incidents")
@@ -474,61 +463,59 @@ export default function LiveMapView() {
         .select("id, name, barangay, capacity, current_occupancy, is_open, location");
       if (selectedBarangay) evacQ = evacQ.eq("barangay", selectedBarangay);
 
-      // For responders we always fetch ALL so markers remain visible on the
-      // map even when they've left their home barangay. The sidebar list
-      // filters client-side.
-      const responderSelect = `
-        id, team_name, vehicle_type, is_available, current_load, max_capacity,
-        current_location, last_location_update,
-        users:users!inner(barangay)
-      `;
-
-      const [incRes, respRes, evacRes, tripRes] = await Promise.all([
+      const [incRes, respRes, respUsersRes, evacRes, tripRes] = await Promise.all([
         incQ,
-        supabase.from("responders").select(responderSelect),
+        supabase
+          .from("responders")
+          .select("id, team_name, vehicle_type, is_available, current_load, max_capacity, current_location, last_location_update"),
+        supabase.from("users").select("id, barangay").eq("role", "responder"),
         evacQ,
         supabase.from("trip_plans").select("id, responder_id, status, stops").eq("status", "active"),
       ]);
 
-      if (incRes.error) console.error("incidents error:", incRes.error);
-      if (respRes.error) console.error("responders error:", respRes.error);
-      if (evacRes.error) console.error("evacs error:", evacRes.error);
+      if (cancelled || disposedRef.current) return;
+
+      if (incRes.error) console.error("[LiveMap] incidents error:", incRes.error);
+      if (respRes.error) console.error("[LiveMap] responders error:", respRes.error);
+      if (respUsersRes.error) console.warn("[LiveMap] users barangay error:", respUsersRes.error);
+      if (evacRes.error) console.error("[LiveMap] evacs error:", evacRes.error);
+      if (tripRes.error) console.error("[LiveMap] trips error:", tripRes.error);
 
       if (incRes.data) setIncidents(incRes.data as SOSIncident[]);
+
       if (respRes.data) {
-        // Flatten users.barangay → home_barangay. Note that PostgREST returns
-        // embedded relations as either an object (many-to-one) or array
-        // depending on FK direction; for responders.id→users.id it's 1:1 so
-        // we get an object, but we handle both to be safe.
-        const flat: Responder[] = (respRes.data as any[]).map((r) => {
-          const u = Array.isArray(r.users) ? r.users[0] : r.users;
-          return {
-            id: r.id,
-            team_name: r.team_name,
-            vehicle_type: r.vehicle_type,
-            is_available: r.is_available,
-            current_load: r.current_load,
-            max_capacity: r.max_capacity,
-            current_location: r.current_location,
-            last_location_update: r.last_location_update,
-            home_barangay: u?.barangay ?? null,
-          };
+        const barangayById = new Map<string, string>();
+        (respUsersRes.data ?? []).forEach((u: any) => {
+          if (u?.id && u?.barangay) barangayById.set(u.id, u.barangay);
         });
-        setResponders(flat);
+        const merged: Responder[] = (respRes.data as any[]).map((r) => ({
+          id: r.id,
+          team_name: r.team_name,
+          vehicle_type: r.vehicle_type,
+          is_available: r.is_available,
+          current_load: r.current_load,
+          max_capacity: r.max_capacity,
+          current_location: r.current_location,
+          last_location_update: r.last_location_update,
+          home_barangay: barangayById.get(r.id) ?? null,
+        }));
+        setResponders(merged);
       }
+
       if (evacRes.data) setEvacCenters(evacRes.data as EvacCenter[]);
       if (tripRes.data) setActiveTrips(tripRes.data as TripPlan[]);
     })();
+
+    return () => { cancelled = true; };
   }, [selectedBarangay]);
 
   // ── REALTIME ────────────────────────────────────────────────
-  // Realtime payloads do NOT include joined data. When a responder row
-  // updates, we preserve the existing home_barangay from our state.
   useEffect(() => {
     const channelId = `livemap-${Date.now()}`;
     const channel = supabase
       .channel(channelId)
       .on("postgres_changes", { event: "*", schema: "public", table: "sos_incidents" }, (payload) => {
+        if (disposedRef.current) return;
         if (payload.eventType === "INSERT") {
           const n = payload.new as SOSIncident;
           if (!["pending", "assigned", "in_progress"].includes(n.status)) return;
@@ -548,20 +535,23 @@ export default function LiveMapView() {
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "responders" }, (payload) => {
+        if (disposedRef.current) return;
         setResponders((prev) =>
-          prev.map((r) => {
-            if (r.id !== payload.new.id) return r;
-            // Preserve home_barangay from existing state since payload lacks join
-            return { ...r, ...(payload.new as any), home_barangay: r.home_barangay };
-          })
+          prev.map((r) =>
+            r.id !== payload.new.id
+              ? r
+              : { ...r, ...(payload.new as any), home_barangay: r.home_barangay }
+          )
         );
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "evacuation_centers" }, (payload) => {
+        if (disposedRef.current) return;
         const u = payload.new as EvacCenter;
         if (selectedBarangay && u.barangay !== selectedBarangay) return;
         setEvacCenters((prev) => prev.map((e) => (e.id === u.id ? { ...e, ...u } : e)));
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "trip_plans" }, (payload) => {
+        if (disposedRef.current) return;
         if (payload.eventType === "INSERT") {
           const n = payload.new as TripPlan;
           if (n.status === "active") setActiveTrips((prev) => [...prev, n]);
@@ -588,12 +578,12 @@ export default function LiveMapView() {
   useEffect(() => {
     const map = mapRef.current;
     const cluster = sosClusterRef.current;
-    if (!map || !cluster) return;
+    if (!map || !cluster || disposedRef.current) return;
 
-    if (heatLayerRef.current) {
+    if (heatLayerRef.current && map.hasLayer(heatLayerRef.current)) {
       map.removeLayer(heatLayerRef.current);
-      heatLayerRef.current = null;
     }
+    heatLayerRef.current = null;
     cluster.clearLayers();
     sosMarkersRef.current.clear();
 
@@ -635,7 +625,7 @@ export default function LiveMapView() {
   // ── RENDER RESPONDER MARKERS ────────────────────────────────
   useEffect(() => {
     const layer = responderLayerRef.current;
-    if (!layer) return;
+    if (!layer || disposedRef.current) return;
     layer.clearLayers();
     responderMarkersRef.current.clear();
     if (!showResponders) return;
@@ -653,7 +643,7 @@ export default function LiveMapView() {
   // ── RENDER EVAC MARKERS ─────────────────────────────────────
   useEffect(() => {
     const layer = evacLayerRef.current;
-    if (!layer) return;
+    if (!layer || disposedRef.current) return;
     layer.clearLayers();
     evacMarkersRef.current.clear();
     if (!showEvacs) return;
@@ -671,7 +661,7 @@ export default function LiveMapView() {
   // ── RENDER TRIP ROUTES ──────────────────────────────────────
   useEffect(() => {
     const layer = routeLayerRef.current;
-    if (!layer) return;
+    if (!layer || disposedRef.current) return;
     layer.clearLayers();
     if (!showTrips) return;
 
@@ -701,11 +691,12 @@ export default function LiveMapView() {
   // ── List handlers ───────────────────────────────────────────
   function focusLocation(coords: [number, number], markerKey: string, markerType: TabId) {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || disposedRef.current) return;
 
     map.flyTo(coords, 17, { duration: 1.2 });
 
     setTimeout(() => {
+      if (disposedRef.current) return;
       if (markerType === "sos") {
         const marker = sosMarkersRef.current.get(markerKey);
         const cluster = sosClusterRef.current;
@@ -748,6 +739,8 @@ export default function LiveMapView() {
   }, [incidents, sosStatusFilter, listSearch]);
 
   const filteredResponders = useMemo(() => {
+    // Markers on the map are ALL responders (so they stay visible when leaving
+    // their home barangay). The sidebar list filters by home barangay.
     let base = responders;
     if (selectedBarangay) {
       base = base.filter((r) => r.home_barangay === selectedBarangay);

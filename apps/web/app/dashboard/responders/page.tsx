@@ -4,67 +4,127 @@
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { Users, Clock, Truck, Wifi, WifiOff, MapPin } from "lucide-react";
+import { Users, Clock, Truck, Wifi, WifiOff, MapPin, AlertTriangle } from "lucide-react";
 import { createClient } from "../../../lib/supabase/client";
 import { useBarangayFilter } from "../../../lib/barangay-filter";
-import type { Responder } from "../../../lib/types";
 
 const supabase = createClient();
+
+interface ResponderRow {
+  id: string;
+  is_available: boolean;
+  current_location: any;
+  current_incident_id: string | null;
+  last_location_update: string | null;
+  vehicle_type: string | null;
+  team_name: string | null;
+  max_capacity: number | null;
+  current_load: number | null;
+  home_barangay: string | null;
+}
 
 function RespondersPageInner() {
   const { selectedBarangay } = useBarangayFilter();
   const searchParams = useSearchParams();
   const focusId = searchParams.get("focus");
 
-  const [responders, setResponders] = useState<Responder[]>([]);
+  const [responders, setResponders] = useState<ResponderRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const focusedCardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    async function fetch() {
-      let q = supabase
-        .from("responders")
-        .select(`
-          id, is_available, current_location, current_incident_id,
-          last_location_update, vehicle_type, team_name, barangay
-        `)
-        .order("is_available", { ascending: false });
+    let cancelled = false;
 
-      if (selectedBarangay) {
-        q = q.eq("barangay", selectedBarangay);
+    async function fetchAll() {
+      setIsLoading(true);
+      setFetchError(null);
+
+      // TWO-QUERY APPROACH:
+      // 1. Fetch ALL responders from public.responders (no join)
+      // 2. Fetch ALL users with role='responder' from public.users (for barangay)
+      // 3. Merge client-side by id — bulletproof against FK / schema cache issues
+      const [respRes, userRes] = await Promise.all([
+        supabase
+          .from("responders")
+          .select(`
+            id, is_available, current_location, current_incident_id,
+            last_location_update, vehicle_type, team_name, max_capacity, current_load
+          `)
+          .order("is_available", { ascending: false }),
+        supabase
+          .from("users")
+          .select("id, barangay")
+          .eq("role", "responder"),
+      ]);
+
+      if (cancelled) return;
+
+      if (respRes.error) {
+        console.error("[Responders] Failed to fetch responders:", respRes.error);
+        setFetchError(`Responders query failed: ${respRes.error.message}`);
+        setIsLoading(false);
+        return;
+      }
+      if (userRes.error) {
+        console.warn("[Responders] Failed to fetch users barangays:", userRes.error);
+        // Not fatal — we can still show responders without barangay info
       }
 
-      const { data, error } = await q;
+      // Build a quick lookup map for barangay by user id
+      const barangayById = new Map<string, string>();
+      (userRes.data ?? []).forEach((u: any) => {
+        if (u?.id && u?.barangay) barangayById.set(u.id, u.barangay);
+      });
 
-      if (!error && data) setResponders(data as Responder[]);
+      let merged: ResponderRow[] = (respRes.data ?? []).map((r: any) => ({
+        id: r.id,
+        is_available: r.is_available,
+        current_location: r.current_location,
+        current_incident_id: r.current_incident_id,
+        last_location_update: r.last_location_update,
+        vehicle_type: r.vehicle_type,
+        team_name: r.team_name,
+        max_capacity: r.max_capacity,
+        current_load: r.current_load,
+        home_barangay: barangayById.get(r.id) ?? null,
+      }));
+
+      // Apply barangay filter on merged data
+      if (selectedBarangay) {
+        merged = merged.filter((r) => r.home_barangay === selectedBarangay);
+      }
+
+      setResponders(merged);
       setIsLoading(false);
     }
 
-    fetch();
+    fetchAll();
 
+    // Realtime subscription: preserve home_barangay from existing state on UPDATE
     const channel = supabase
       .channel(`responder-updates-${Date.now()}`)
       .on("postgres_changes", {
-        event: "*",
+        event: "UPDATE",
         schema: "public",
         table: "responders",
       }, (payload) => {
-        if (payload.eventType === "UPDATE") {
-          const u = payload.new as any;
-          // If barangay filter is active and the new row doesn't match, drop it
-          if (selectedBarangay && u.barangay !== selectedBarangay) {
-            setResponders((prev) => prev.filter((r) => r.id !== u.id));
-          } else {
-            setResponders((prev) =>
-              prev.map((r) => r.id === u.id ? { ...r, ...u } : r)
-            );
-          }
-        }
+        if (cancelled) return;
+        setResponders((prev) =>
+          prev.map((r) =>
+            r.id === payload.new.id
+              ? { ...r, ...(payload.new as any), home_barangay: r.home_barangay }
+              : r
+          )
+        );
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
   }, [selectedBarangay]);
 
   useEffect(() => {
@@ -88,7 +148,16 @@ function RespondersPageInner() {
 
   return (
     <div className="space-y-5">
-      {/* Summary */}
+      {fetchError && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-red-400" />
+          <div>
+            <p className="text-sm font-medium text-red-300">Failed to load responders</p>
+            <p className="mt-0.5 text-xs text-red-400/80">{fetchError}</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
           <p className="text-xs text-gray-500">
@@ -120,6 +189,11 @@ function RespondersPageInner() {
         ) : (
           responders.map((r) => {
             const isFocused = r.id === focusId;
+            const loadPct =
+              r.max_capacity && r.max_capacity > 0
+                ? Math.round(((r.current_load ?? 0) / r.max_capacity) * 100)
+                : 0;
+
             return (
               <div
                 key={r.id}
@@ -134,31 +208,43 @@ function RespondersPageInner() {
               >
                 <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${r.is_available ? "bg-emerald-400" : "bg-amber-400"}`} />
+                    <div
+                      className={`h-2 w-2 rounded-full ${
+                        r.is_available ? "bg-emerald-400" : "bg-amber-400"
+                      }`}
+                    />
                     <span className="text-sm font-medium text-gray-200">
                       {r.team_name || "Responder"}
                     </span>
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    r.is_available
-                      ? "bg-emerald-400/10 text-emerald-400"
-                      : "bg-amber-400/10 text-amber-400"
-                  }`}>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      r.is_available
+                        ? "bg-emerald-400/10 text-emerald-400"
+                        : "bg-amber-400/10 text-amber-400"
+                    }`}
+                  >
                     {r.is_available ? "Available" : "On Duty"}
                   </span>
                 </div>
 
                 <div className="space-y-1.5 text-xs text-gray-400">
-                  {(r as any).barangay && (
+                  {r.home_barangay && (
                     <div className="flex items-center gap-1.5">
                       <MapPin className="h-3 w-3 text-gray-600" />
-                      {(r as any).barangay}
+                      {r.home_barangay}
                     </div>
                   )}
                   {r.vehicle_type && (
                     <div className="flex items-center gap-1.5">
                       <Truck className="h-3 w-3 text-gray-600" />
                       {r.vehicle_type}
+                    </div>
+                  )}
+                  {r.max_capacity !== null && r.max_capacity > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <Users className="h-3 w-3 text-gray-600" />
+                      Load: {r.current_load ?? 0}/{r.max_capacity} ({loadPct}%)
                     </div>
                   )}
                   <div className="flex items-center gap-1.5">
@@ -172,7 +258,7 @@ function RespondersPageInner() {
                   {r.last_location_update && (
                     <div className="flex items-center gap-1.5">
                       <Clock className="h-3 w-3 text-gray-600" />
-                      Last update: {formatDistanceToNow(new Date(r.last_location_update), { addSuffix: true })}
+                      Last: {formatDistanceToNow(new Date(r.last_location_update), { addSuffix: true })}
                     </div>
                   )}
                 </div>

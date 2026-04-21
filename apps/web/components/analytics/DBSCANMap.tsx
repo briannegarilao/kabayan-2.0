@@ -6,8 +6,6 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MAP_CONFIG } from "../../lib/map-config";
 
-// ── Types ──────────────────────────────────────────────────
-// Matches the shape seeded by scripts/seed_dbscan_sample.sql
 interface DBSCANPoint {
   id: string;
   lat: number;
@@ -25,14 +23,9 @@ export interface DBSCANPayload {
   clusters: DBSCANCluster[];
   noise_count?: number;
   silhouette_score?: number;
-  algorithm_params?: {
-    eps_km?: number;
-    min_samples?: number;
-  };
+  algorithm_params?: { eps_km?: number; min_samples?: number };
 }
 
-// 8 distinct, high-contrast cluster colors.
-// These are chosen to be distinguishable AND accessible on a dark basemap.
 const CLUSTER_COLORS = [
   "#ef4444", // red
   "#3b82f6", // blue
@@ -45,11 +38,10 @@ const CLUSTER_COLORS = [
 ];
 
 function colorForCluster(id: number): string {
-  if (id < 0) return "#6b7280"; // noise
+  if (id < 0) return "#6b7280";
   return CLUSTER_COLORS[id % CLUSTER_COLORS.length];
 }
 
-// Point marker
 function createClusterPointIcon(color: string): L.DivIcon {
   return L.divIcon({
     className: "",
@@ -65,7 +57,6 @@ function createClusterPointIcon(color: string): L.DivIcon {
   });
 }
 
-// Centroid marker — bigger, with cluster id
 function createCentroidIcon(color: string, clusterId: number, count: number): L.DivIcon {
   return L.divIcon({
     className: "",
@@ -85,7 +76,6 @@ function createCentroidIcon(color: string, clusterId: number, count: number): L.
   });
 }
 
-// ── GeoJSON types ─────────────────────────────────────────────
 interface BoundaryGeoJSON {
   type: "Feature";
   properties: { name: string };
@@ -109,18 +99,21 @@ export default function DBSCANMap({ data }: Props) {
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
   const boundaryLoadedRef = useRef(false);
+  const disposedRef = useRef(false);
 
-  // Initialize map once
+  // Initialize map once — no preferCanvas
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
+    disposedRef.current = false;
+    boundaryLoadedRef.current = false;
 
     const map = L.map(containerRef.current, {
       center: MAP_CONFIG.defaultCenter,
       zoom: MAP_CONFIG.defaultZoom,
       maxBounds: L.latLngBounds(MAP_CONFIG.maxBounds),
       maxBoundsViscosity: 1.0,
-      preferCanvas: true,
       zoomControl: true,
+      // preferCanvas: REMOVED — use SVG renderer to avoid clearRect crash
     });
 
     L.tileLayer(MAP_CONFIG.tileUrl, {
@@ -133,25 +126,24 @@ export default function DBSCANMap({ data }: Props) {
     mapRef.current = map;
     layerRef.current = group;
 
-    setTimeout(() => map.invalidateSize(), 100);
+    const invalidateTimer = setTimeout(() => {
+      if (!disposedRef.current) map.invalidateSize();
+    }, 100);
 
-    // Load boundary overlay (same treatment as Overview / LiveMap)
+    // Load boundary overlay
     Promise.all([
       fetch("/geo/dasma-boundary.json").then((r) => r.json()),
       fetch("/geo/dasma-barangays.json").then((r) => r.json()),
     ])
       .then(([boundary, brgy]: [BoundaryGeoJSON, BarangaysGeoJSON]) => {
-        if (!mapRef.current || boundaryLoadedRef.current) return;
+        if (!mapRef.current || disposedRef.current || boundaryLoadedRef.current) return;
         boundaryLoadedRef.current = true;
 
         const dasmaRing: [number, number][] = boundary.geometry.coordinates[0].map(
           ([lng, lat]) => [lat, lng]
         );
         const worldRing: [number, number][] = [
-          [14.10, 120.60],
-          [14.10, 121.30],
-          [14.55, 121.30],
-          [14.55, 120.60],
+          [14.10, 120.60], [14.10, 121.30], [14.55, 121.30], [14.55, 120.60],
         ];
 
         const mask = L.polygon([worldRing, dasmaRing], {
@@ -161,31 +153,19 @@ export default function DBSCANMap({ data }: Props) {
           stroke: false,
           interactive: false,
         });
-        mask.addTo(mapRef.current);
+        mask.addTo(mapRef.current!);
 
         const cityOutline = L.geoJSON(boundary as any, {
-          style: {
-            color: "#60a5fa",
-            weight: 2.5,
-            opacity: 0.9,
-            fill: false,
-            interactive: false,
-          } as any,
+          style: { color: "#60a5fa", weight: 2.5, opacity: 0.9, fill: false, interactive: false } as any,
           interactive: false,
         });
-        cityOutline.addTo(mapRef.current);
+        cityOutline.addTo(mapRef.current!);
 
         const brgyLayer = L.geoJSON(brgy as any, {
-          style: {
-            color: "#64748b",
-            weight: 0.8,
-            opacity: 0.5,
-            fillOpacity: 0.0,
-            interactive: false,
-          } as any,
+          style: { color: "#64748b", weight: 0.8, opacity: 0.5, fillOpacity: 0.0, interactive: false } as any,
           interactive: false,
         });
-        brgyLayer.addTo(mapRef.current);
+        brgyLayer.addTo(mapRef.current!);
 
         mask.bringToBack();
         cityOutline.bringToBack();
@@ -195,7 +175,13 @@ export default function DBSCANMap({ data }: Props) {
       .catch((err) => console.error("DBSCANMap: failed to load boundaries:", err));
 
     return () => {
-      map.remove();
+      disposedRef.current = true;
+      clearTimeout(invalidateTimer);
+      try {
+        map.remove();
+      } catch (e) {
+        // swallow
+      }
       mapRef.current = null;
       layerRef.current = null;
       boundaryLoadedRef.current = false;
@@ -206,7 +192,7 @@ export default function DBSCANMap({ data }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     const group = layerRef.current;
-    if (!map || !group) return;
+    if (!map || !group || disposedRef.current) return;
 
     group.clearLayers();
     if (!data || !data.clusters || data.clusters.length === 0) return;
@@ -216,16 +202,11 @@ export default function DBSCANMap({ data }: Props) {
     for (const cluster of data.clusters) {
       const color = colorForCluster(cluster.cluster_id);
 
-      // Hull polygon (convex-ish): simply draw a filled, semi-transparent circle
-      // around the centroid sized by the furthest point. Simpler than convex hull
-      // and looks fine for a thesis presentation.
       let maxDist = 0;
       for (const p of cluster.points) {
         const d = Math.hypot(p.lat - cluster.center_lat, p.lng - cluster.center_lng);
         if (d > maxDist) maxDist = d;
       }
-      // maxDist is in degrees; convert roughly to meters for Leaflet circle radius
-      // 1 degree ≈ 111,000 meters at equator. Round up a bit for padding.
       const radiusMeters = Math.max(80, maxDist * 111000 * 1.25);
 
       const hullCircle = L.circle([cluster.center_lat, cluster.center_lng], {
@@ -239,7 +220,6 @@ export default function DBSCANMap({ data }: Props) {
       });
       group.addLayer(hullCircle);
 
-      // Individual incident points
       for (const p of cluster.points) {
         const marker = L.marker([p.lat, p.lng], { icon: createClusterPointIcon(color) });
         marker.bindPopup(
@@ -254,7 +234,6 @@ export default function DBSCANMap({ data }: Props) {
         allPoints.push([p.lat, p.lng]);
       }
 
-      // Centroid
       const centroid = L.marker(
         [cluster.center_lat, cluster.center_lng],
         { icon: createCentroidIcon(color, cluster.cluster_id, cluster.incident_count) }
@@ -270,8 +249,7 @@ export default function DBSCANMap({ data }: Props) {
       group.addLayer(centroid);
     }
 
-    // Fit to show all points
-    if (allPoints.length > 1) {
+    if (allPoints.length > 1 && !disposedRef.current) {
       const bounds = L.latLngBounds(allPoints);
       map.fitBounds(bounds, { padding: [50, 50] });
     }
@@ -283,7 +261,6 @@ export default function DBSCANMap({ data }: Props) {
         ref={containerRef}
         className="h-[480px] w-full overflow-hidden rounded-lg border border-gray-800"
       />
-      {/* Legend — only show if data present */}
       {data && data.clusters && data.clusters.length > 0 && (
         <div className="absolute right-3 top-3 z-[500] max-h-[450px] overflow-y-auto rounded-lg border border-gray-800 bg-gray-900/95 p-3 text-xs shadow-2xl backdrop-blur">
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
