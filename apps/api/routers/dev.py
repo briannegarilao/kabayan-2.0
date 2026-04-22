@@ -1,14 +1,18 @@
 # apps/api/routers/dev.py
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import Optional
 
 from config import Settings
 from services.dev_auth import require_dev_console_backend
 from services.dev_logs import add_dev_log, get_recent_logs
-from services.dev_stats import fetch_dev_stats
-from services.dev_reset import run_dev_reset, clear_active_simulated_trips
+from services.dev_reset import clear_active_simulated_trips, run_dev_reset
+from services.dev_scenarios import list_scenarios, run_scenario
 from services.dev_seed import seed_simulated_sos
+from services.dev_simulation import advance_simulation, auto_run_simulation
+from services.dev_state import fetch_dev_active_state
+from services.dev_stats import fetch_dev_stats
 from services.supabase_client import get_supabase
 
 router = APIRouter()
@@ -40,6 +44,21 @@ class ForceResponderStatusRequest(BaseModel):
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
+class RunScenarioRequest(BaseModel):
+    scenario_id: str
+    mode: str = Field(default="setup_and_trigger")
+
+
+class SimulationAdvanceRequest(BaseModel):
+    trip_id: Optional[str] = None
+    action: str = Field(default="auto_step")
+
+
+class SimulationAutoRunRequest(BaseModel):
+    trip_id: Optional[str] = None
+    max_steps: int = Field(default=10, ge=1, le=25)
+
+
 @router.get("/health")
 async def dev_health(settings: Settings = Depends(require_dev_console_backend)):
     return {
@@ -55,7 +74,7 @@ async def dev_health(settings: Settings = Depends(require_dev_console_backend)):
 @router.get("/logs")
 async def dev_logs(
     n: int = Query(default=100, ge=1, le=500),
-    source: str | None = Query(default=None),
+    source: Optional[str] = Query(default=None),
     settings: Settings = Depends(require_dev_console_backend),
 ):
     logs = get_recent_logs(limit=n, source=source)
@@ -69,6 +88,12 @@ async def dev_logs(
 async def dev_stats(settings: Settings = Depends(require_dev_console_backend)):
     stats = fetch_dev_stats()
     return {"stats": stats}
+
+
+@router.get("/state/active")
+async def dev_state_active(settings: Settings = Depends(require_dev_console_backend)):
+    state = fetch_dev_active_state()
+    return {"state": state}
 
 
 @router.post("/reset")
@@ -147,4 +172,45 @@ async def dev_force_responder_status(
 @router.post("/trips/clear")
 async def dev_trips_clear(settings: Settings = Depends(require_dev_console_backend)):
     result = clear_active_simulated_trips()
+    return {"success": True, "result": result}
+
+
+@router.get("/scenarios")
+async def dev_list_scenarios(settings: Settings = Depends(require_dev_console_backend)):
+    return {"scenarios": list_scenarios()}
+
+
+@router.post("/scenarios/run")
+async def dev_run_scenario(
+    payload: RunScenarioRequest,
+    settings: Settings = Depends(require_dev_console_backend),
+):
+    try:
+        result = await run_scenario(payload.scenario_id, payload.mode)
+        return {"success": True, "result": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/simulation/advance")
+async def dev_simulation_advance(
+    payload: SimulationAdvanceRequest,
+    settings: Settings = Depends(require_dev_console_backend),
+):
+    result = await advance_simulation(
+        trip_id=payload.trip_id,
+        action=payload.action,
+    )
+    return {"success": True, "result": result}
+
+
+@router.post("/simulation/auto-run")
+async def dev_simulation_auto_run(
+    payload: SimulationAutoRunRequest,
+    settings: Settings = Depends(require_dev_console_backend),
+):
+    result = await auto_run_simulation(
+        trip_id=payload.trip_id,
+        max_steps=payload.max_steps,
+    )
     return {"success": True, "result": result}

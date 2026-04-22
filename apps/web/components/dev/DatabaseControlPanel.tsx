@@ -15,6 +15,7 @@ export function DatabaseControlPanel({
   onOpenAllEvacs,
   onCloseAllEvacs,
   onResetOccupancy,
+  onClearTrips,
 }: {
   evacSummary: EvacSummary;
   busy: string | null;
@@ -23,6 +24,7 @@ export function DatabaseControlPanel({
   onOpenAllEvacs: () => void;
   onCloseAllEvacs: () => void;
   onResetOccupancy: () => void;
+  onClearTrips: () => void;
 }) {
   return (
     <div className="space-y-5">
@@ -132,6 +134,16 @@ export function DatabaseControlPanel({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : null}
             Reset Occupancy
+          </button>
+
+          <button
+            onClick={onClearTrips}
+            disabled={busy !== null}
+            className="mt-3 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-sm font-medium text-gray-200 transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy === "trips-clear"
+              ? "Clearing simulated trips..."
+              : "Clear Active Simulated Trips"}
           </button>
         </div>
 
