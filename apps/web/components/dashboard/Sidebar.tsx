@@ -12,6 +12,7 @@ import {
   LogOut,
   Map as MapIcon,
   Wrench,
+  PlayCircle,
 } from "lucide-react";
 import { createClient } from "../../lib/supabase/client";
 import { BarangayFilter } from "./BarangayFilter";
@@ -101,6 +102,7 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
           {showDevConsole && (
             <>
               <div className="my-3 border-t border-gray-800" />
+
               <Link
                 href="/dashboard/dev"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
@@ -119,6 +121,27 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
                 Dev Console
                 <span className="ml-auto rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400">
                   Dev
+                </span>
+              </Link>
+
+              <Link
+                href="/dashboard/salitran-iv-sim"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  pathname.startsWith("/dashboard/salitran-iv-sim")
+                    ? "bg-violet-500/10 text-violet-300"
+                    : "text-gray-400 hover:bg-violet-500/5 hover:text-violet-300"
+                }`}
+              >
+                <PlayCircle
+                  className={`h-[18px] w-[18px] ${
+                    pathname.startsWith("/dashboard/salitran-iv-sim")
+                      ? "text-violet-300"
+                      : "text-gray-500"
+                  }`}
+                />
+                Salitran IV Sim
+                <span className="ml-auto rounded bg-violet-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300">
+                  Sim
                 </span>
               </Link>
             </>

@@ -20,6 +20,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard/analytics": "Analytics & Insights",
   "/dashboard/evacuation": "Evacuation Centers",
   "/dashboard/announcements": "Announcements",
+  "/dashboard/salitran-iv-sim": "Salitran IV Simulation",
 };
 
 export function Header({ userProfile }: { userProfile: UserProfile }) {

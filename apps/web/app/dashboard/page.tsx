@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { CompactDashboardStats } from "../../components/dashboard/CompactDashboardStats";
+import { SimulationModeBanner } from "../../components/dashboard/SimulationModeBanner";
 
 const LiveMapView = dynamic(() => import("../../components/map/LiveMapView"), {
   ssr: false,
@@ -18,10 +19,9 @@ const LiveMapView = dynamic(() => import("../../components/map/LiveMapView"), {
 export default function DashboardPage() {
   return (
     <div className="space-y-4">
-      {/* Compact summary strip */}
+      <SimulationModeBanner />
       <CompactDashboardStats />
 
-      {/* Main dashboard = Live Map */}
       <div className="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
         <div className="h-[calc(100vh-13.5rem)] min-h-[620px]">
           <LiveMapView />
