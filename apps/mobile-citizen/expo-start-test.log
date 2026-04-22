@@ -1,0 +1,8 @@
+env: load .env
+env: export EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_NO_DEPENDENCY_VALIDATION SUPABASE_SERVICE_ROLE_KEY REVALIDATION_SECRET NEXT_PUBLIC_API_BASE_URL
+Starting project at C:\Users\ACER-PC\Desktop\KABAYAN\kabayan-system\apps\mobile-citizen
+React Compiler enabled
+Starting Metro Bundler
+warning: Bundler cache is empty, rebuilding (this may take a minute)
+Waiting on http://localhost:8097
+Logs for your project will appear below.
