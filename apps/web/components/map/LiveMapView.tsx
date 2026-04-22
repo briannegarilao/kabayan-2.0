@@ -78,6 +78,7 @@ export default function LiveMapView() {
     setEvacCenters,
     activeTrips,
     setActiveTrips,
+    refetchMapData,
   } = useLiveMapData(selectedBarangay, disposedRef);
 
   useMapRealtime(
@@ -87,6 +88,7 @@ export default function LiveMapView() {
     setResponders,
     setEvacCenters,
     setActiveTrips,
+    refetchMapData,
   );
 
   const { displayResponders } = useSalitranSimulationPlayback({

@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Users, Building2, CloudRain } from "lucide-react";
 
 import { createClient } from "../../lib/supabase/client";
 import { useRealtimeIncidents } from "../../hooks/useRealtimeIncidents";
-
-const supabase = createClient();
 
 function CompactStatCard({
   label,
@@ -40,6 +38,7 @@ function CompactStatCard({
 }
 
 export function CompactDashboardStats() {
+  const supabase = useMemo(() => createClient(), []);
   const { incidents } = useRealtimeIncidents();
 
   const [stats, setStats] = useState({
@@ -49,8 +48,8 @@ export function CompactDashboardStats() {
   });
   const [statsLoading, setStatsLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchStats() {
+  const fetchStats = useCallback(async () => {
+    try {
       const [incidentRes, responderRes, evacRes] = await Promise.all([
         supabase
           .from("sos_incidents")
@@ -71,14 +70,40 @@ export function CompactDashboardStats() {
         availableResponders: responderRes.count ?? 0,
         openEvacCenters: evacRes.count ?? 0,
       });
+    } finally {
       setStatsLoading(false);
     }
+  }, [supabase]);
 
-    fetchStats();
+  useEffect(() => {
+    void fetchStats();
 
     const interval = setInterval(fetchStats, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+
+    const channel = supabase
+      .channel(`dashboard-stats-${Date.now()}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sos_incidents" },
+        () => void fetchStats(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "responders" },
+        () => void fetchStats(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "evacuation_centers" },
+        () => void fetchStats(),
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [fetchStats, supabase]);
 
   const pendingCount = useMemo(
     () => incidents.filter((i) => i.status === "pending").length,

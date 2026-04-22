@@ -1,25 +1,22 @@
 // apps/web/components/map/hooks/useLiveMapData.ts
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "../../../lib/supabase/client";
 import type { EvacCenter, Responder, SOSIncident, TripPlan } from "../types";
-
-const supabase = createClient();
 
 export function useLiveMapData(
   selectedBarangay: string | null,
   disposedRef: React.MutableRefObject<boolean>,
 ) {
+  const supabase = useMemo(() => createClient(), []);
   const [incidents, setIncidents] = useState<SOSIncident[]>([]);
   const [responders, setResponders] = useState<Responder[]>([]);
   const [evacCenters, setEvacCenters] = useState<EvacCenter[]>([]);
   const [activeTrips, setActiveTrips] = useState<TripPlan[]>([]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
+  const fetchMapData = useCallback(
+    async (cancelled = false) => {
       let incQ = supabase
         .from("sos_incidents")
         .select(
@@ -106,12 +103,39 @@ export function useLiveMapData(
 
       if (evacRes.data) setEvacCenters(evacRes.data as EvacCenter[]);
       if (tripRes.data) setActiveTrips(tripRes.data as TripPlan[]);
-    })();
+    },
+    [selectedBarangay, disposedRef, supabase],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchMapData(cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, [selectedBarangay, disposedRef]);
+  }, [fetchMapData]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void fetchMapData();
+    }, 15000);
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        void fetchMapData();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [fetchMapData]);
 
   return {
     incidents,
@@ -122,5 +146,6 @@ export function useLiveMapData(
     setEvacCenters,
     activeTrips,
     setActiveTrips,
+    refetchMapData: fetchMapData,
   };
 }

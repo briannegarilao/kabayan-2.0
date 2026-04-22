@@ -14,9 +14,19 @@ export function useMapRealtime(
   setResponders: React.Dispatch<React.SetStateAction<Responder[]>>,
   setEvacCenters: React.Dispatch<React.SetStateAction<EvacCenter[]>>,
   setActiveTrips: React.Dispatch<React.SetStateAction<TripPlan[]>>,
+  refetchMapData: () => Promise<void>,
 ) {
   useEffect(() => {
     const channelId = `livemap-${Date.now()}`;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = () => {
+      if (disposedRef.current) return;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        void refetchMapData();
+      }, 1200);
+    };
 
     const channel = supabase
       .channel(channelId)
@@ -25,6 +35,7 @@ export function useMapRealtime(
         { event: "*", schema: "public", table: "sos_incidents" },
         (payload) => {
           if (disposedRef.current) return;
+          scheduleRefresh();
 
           if (payload.eventType === "INSERT") {
             const n = payload.new as SOSIncident;
@@ -55,6 +66,7 @@ export function useMapRealtime(
         { event: "UPDATE", schema: "public", table: "responders" },
         (payload) => {
           if (disposedRef.current) return;
+          scheduleRefresh();
 
           setResponders((prev) =>
             prev.map((r) =>
@@ -74,6 +86,7 @@ export function useMapRealtime(
         { event: "UPDATE", schema: "public", table: "evacuation_centers" },
         (payload) => {
           if (disposedRef.current) return;
+          scheduleRefresh();
           const u = payload.new as EvacCenter;
           if (selectedBarangay && u.barangay !== selectedBarangay) return;
 
@@ -87,6 +100,7 @@ export function useMapRealtime(
         { event: "*", schema: "public", table: "trip_plans" },
         (payload) => {
           if (disposedRef.current) return;
+          scheduleRefresh();
 
           if (payload.eventType === "INSERT") {
             const n = payload.new as TripPlan;
@@ -115,6 +129,7 @@ export function useMapRealtime(
       .subscribe();
 
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
   }, [
@@ -124,5 +139,6 @@ export function useMapRealtime(
     setResponders,
     setEvacCenters,
     setActiveTrips,
+    refetchMapData,
   ]);
 }
