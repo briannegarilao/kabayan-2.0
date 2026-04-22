@@ -16,10 +16,11 @@ import {
   SALITRAN_IV_NAME,
   SALITRAN_SCENARIOS,
   getSalitranIVPolygon,
-  startSalitranSimulationSession,
   validateScenariosAgainstPolygon,
+  type SalitranRunMode,
   type SalitranScenarioDef,
 } from "../../../lib/salitran-sim";
+import { prepareSalitranScenarioRun } from "../../../lib/salitran-sim-runner";
 
 interface ValidationState {
   total: number;
@@ -34,9 +35,19 @@ interface ValidationState {
 
 export default function SalitranIVSimPage() {
   const router = useRouter();
+
   const [startingId, setStartingId] = useState<string | null>(null);
+  const [modeByScenario, setModeByScenario] = useState<
+    Record<string, SalitranRunMode>
+  >(
+    Object.fromEntries(
+      SALITRAN_SCENARIOS.map((scenario) => [scenario.id, "setup_and_trigger"]),
+    ) as Record<string, SalitranRunMode>,
+  );
+
   const [validation, setValidation] = useState<ValidationState | null>(null);
   const [validationLoading, setValidationLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -83,10 +94,24 @@ export default function SalitranIVSimPage() {
     };
   }, []);
 
-  async function handleStartScenario(scenario: SalitranScenarioDef) {
+  async function handleRunScenario(scenario: SalitranScenarioDef) {
+    const runMode = modeByScenario[scenario.id] ?? "setup_and_trigger";
+    setPageError(null);
     setStartingId(scenario.id);
-    startSalitranSimulationSession(scenario);
-    router.push("/dashboard");
+
+    try {
+      await prepareSalitranScenarioRun({
+        scenario,
+        runMode,
+      });
+
+      router.push("/dashboard");
+    } catch (error) {
+      setPageError(
+        error instanceof Error ? error.message : "Failed to prepare scenario.",
+      );
+      setStartingId(null);
+    }
   }
 
   const validationSummary = useMemo(() => {
@@ -110,10 +135,10 @@ export default function SalitranIVSimPage() {
         </div>
 
         <p className="max-w-4xl text-sm text-gray-300">
-          Phase 2 adds the curated local data pack for the Salitran IV demo:
-          fixed incident coordinates, realistic mock requesters, responder
-          staging points, and a designated primary evac setup. Everything here
-          is hardcoded client-side for speed and zero added cost.
+          Phase 3 adds the simulation director. Starting a scenario now resets
+          the previous simulation, opens Salitran IV evac center rows, stages
+          responders at fixed points, inserts the hardcoded request dataset, and
+          optionally triggers the assignment engine.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
@@ -122,10 +147,10 @@ export default function SalitranIVSimPage() {
             Fixed barangay: {SALITRAN_IV_NAME}
           </span>
           <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1 text-violet-100/80">
-            Cost: zero new backend calls
+            Reuses existing Dev API
           </span>
           <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1 text-violet-100/80">
-            Hardcoded Phase 2 demo data
+            Hardcoded data, minimal backend cost
           </span>
         </div>
 
@@ -151,11 +176,19 @@ export default function SalitranIVSimPage() {
             </div>
           )}
         </div>
+
+        {pageError && (
+          <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {pageError}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {SALITRAN_SCENARIOS.map((scenario) => {
           const isStarting = startingId === scenario.id;
+          const selectedMode =
+            modeByScenario[scenario.id] ?? "setup_and_trigger";
 
           return (
             <div
@@ -261,7 +294,7 @@ export default function SalitranIVSimPage() {
                 </div>
               </div>
 
-              <div className="mb-5 rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+              <div className="mb-4 rounded-xl border border-gray-800 bg-gray-950/60 p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <TriangleAlert className="h-4 w-4 text-red-300" />
                   <p className="text-sm font-medium text-white">
@@ -295,20 +328,39 @@ export default function SalitranIVSimPage() {
                 </div>
               </div>
 
+              <div className="mb-4">
+                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  Run mode
+                </label>
+                <select
+                  value={selectedMode}
+                  onChange={(e) =>
+                    setModeByScenario((prev) => ({
+                      ...prev,
+                      [scenario.id]: e.target.value as SalitranRunMode,
+                    }))
+                  }
+                  className="w-full rounded-xl border border-gray-800 bg-gray-950/60 px-3 py-3 text-sm text-gray-200 outline-none focus:border-violet-500"
+                >
+                  <option value="setup_only">Setup only</option>
+                  <option value="setup_and_trigger">Setup + Trigger</option>
+                </select>
+              </div>
+
               <button
-                onClick={() => handleStartScenario(scenario)}
+                onClick={() => handleRunScenario(scenario)}
                 disabled={isStarting}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isStarting ? (
                   <>
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                    Launching Dashboard...
+                    Preparing scenario...
                   </>
                 ) : (
                   <>
                     <PlayCircle className="h-4 w-4" />
-                    Start Scenario
+                    Run Scenario
                     <ArrowRight className="h-4 w-4" />
                   </>
                 )}
