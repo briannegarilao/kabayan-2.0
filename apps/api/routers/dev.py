@@ -103,6 +103,11 @@ async def dev_reset(
     payload: DevResetRequest,
     settings: Settings = Depends(require_dev_console_backend),
 ):
+    print("[DEV RESET ROUTE] incoming request", {
+    "mode": payload.mode,
+    "app_env": settings.APP_ENV,
+    "dev_console_enabled": settings.DEV_CONSOLE_ENABLED,
+})
     result = run_dev_reset(payload.mode)
     return {"success": True, "result": result}
 

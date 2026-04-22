@@ -10,6 +10,11 @@ def init_supabase() -> None:
     """Call once during app lifespan startup."""
     global _supabase
     settings = get_settings()
+    
+    print("[SUPABASE INIT]", {
+    "project_ref": settings.SUPABASE_URL.replace("https://", "").split(".")[0]
+    })
+    
     _supabase = create_client(
         settings.SUPABASE_URL,
         settings.SUPABASE_SERVICE_ROLE_KEY,  # Admin key — bypasses all RLS

@@ -13,34 +13,71 @@ def _unwrap_rpc_data(data: Any) -> Any:
     return data
 
 
+from config import get_settings
+
 def run_dev_reset(mode: str = "soft") -> dict:
     supabase = get_supabase()
+    settings = get_settings()
+
+    project_host = settings.SUPABASE_URL.replace("https://", "").split(".")[0]
+
+    print("[DEV RESET] start", {
+        "mode": mode,
+        "supabase_project_ref": project_host,
+    })
 
     try:
         result = supabase.rpc("dev_reset", {"mode": mode}).execute()
+
+        print("[DEV RESET] rpc raw result", {
+            "mode": mode,
+            "data": result.data,
+            "count": getattr(result, "count", None),
+        })
+
         data = _unwrap_rpc_data(result.data)
+
+        add_dev_log(
+            source="DEV",
+            level="WARNING",
+            event="reset",
+            message=f"Executed Dev Console reset ({mode})",
+            metadata={
+                "mode": mode,
+                "result": data,
+                "supabase_project_ref": project_host,
+            },
+        )
+
+        print("[DEV RESET] success", {
+            "mode": mode,
+            "supabase_project_ref": project_host,
+            "normalized_result": data,
+        })
+
+        return data or {}
+
     except Exception as e:
+        print("[DEV RESET] failed", {
+            "mode": mode,
+            "supabase_project_ref": project_host,
+            "error_type": type(e).__name__,
+            "error": str(e),
+        })
+
         add_dev_log(
             source="DEV",
             level="ERROR",
             event="reset_failed",
             message=f"Dev Console reset failed ({mode})",
-            metadata={"mode": mode, "error": str(e)},
+            metadata={
+                "mode": mode,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "supabase_project_ref": project_host,
+            },
         )
         raise
-
-    if data is None:
-        data = {}
-
-    add_dev_log(
-        source="DEV",
-        level="WARNING",
-        event="reset",
-        message=f"Executed Dev Console reset ({mode})",
-        metadata={"mode": mode, "result": data},
-    )
-
-    return data
 
 
 def clear_active_simulated_trips() -> dict:

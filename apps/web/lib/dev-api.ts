@@ -61,6 +61,12 @@ export async function getDevStateActive() {
 }
 
 export async function postDevReset(mode: "soft" | "full") {
+  console.log("[DevConsole] postDevReset()", {
+    mode,
+    apiBaseUrl: API_BASE_URL,
+    endpoint: `${API_BASE_URL}/api/dev/reset`,
+  });
+
   const response = await fetch(`${API_BASE_URL}/api/dev/reset`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
