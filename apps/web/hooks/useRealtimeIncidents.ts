@@ -1,49 +1,58 @@
 // apps/web/hooks/useRealtimeIncidents.ts
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "../lib/supabase/client";
 import type { SOSIncident } from "../lib/types";
 
-const supabase = createClient();
-
 export function useRealtimeIncidents(barangay?: string) {
+  const supabase = useMemo(() => createClient(), []);
   const [incidents, setIncidents] = useState<SOSIncident[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Initial fetch — named columns only, never SELECT *
   const fetchIncidents = useCallback(async () => {
-    let query = supabase
-      .from("sos_incidents")
-      .select(
-        `id, status, barangay, flood_severity, flood_severity_score,
-         message, image_url, created_at, assigned_at, location`
-      )
-      .in("status", ["pending", "assigned", "in_progress"])
-      .order("created_at", { ascending: false })
-      .limit(100); // Hard cap — never fetch more than 100 active at once
+    setIsLoading(true);
 
-    if (barangay) {
-      query = query.eq("barangay", barangay);
+    try {
+      let query = supabase
+        .from("sos_incidents")
+        .select(
+          `id, status, barangay, flood_severity, flood_severity_score,
+           message, image_url, created_at, assigned_at, location`,
+        )
+        .in("status", ["pending", "assigned", "in_progress"])
+        .order("created_at", { ascending: false })
+        .limit(100); // Hard cap — never fetch more than 100 active at once
+
+      if (barangay) {
+        query = query.eq("barangay", barangay);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("Failed to fetch incidents:", error.message);
+        return;
+      }
+
+      setIncidents((data as SOSIncident[]) || []);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unknown fetch failure";
+      console.error("Failed to fetch incidents:", message);
+    } finally {
+      setIsLoading(false);
     }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("Failed to fetch incidents:", error.message);
-    }
-
-    setIncidents((data as SOSIncident[]) || []);
-    setIsLoading(false);
-  }, [barangay]);
+  }, [barangay, supabase]);
 
   useEffect(() => {
-    fetchIncidents();
+    void fetchIncidents();
 
     // Subscribe to real-time changes on sos_incidents
     // Filter at DB level — only streams events the client needs
     const channel = supabase
-      .channel("active-incidents")
+      .channel(`active-incidents:${barangay ?? "all"}`)
       .on(
         "postgres_changes",
         {
@@ -85,7 +94,7 @@ export function useRealtimeIncidents(barangay?: string) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [barangay, fetchIncidents]);
+  }, [barangay, fetchIncidents, supabase]);
 
   return { incidents, isLoading, refetch: fetchIncidents };
 }

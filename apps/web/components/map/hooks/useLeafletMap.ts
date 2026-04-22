@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import L from "leaflet";
-import "leaflet.markercluster";
 import { MAP_CONFIG } from "../../../lib/map-config";
 
 export function useLeafletMap() {
@@ -31,80 +30,100 @@ export function useLeafletMap() {
     if (mapRef.current || !containerRef.current) return;
     disposedRef.current = false;
 
-    const map = L.map(containerRef.current, {
-      center: MAP_CONFIG.defaultCenter,
-      zoom: MAP_CONFIG.defaultZoom,
-      maxBounds: L.latLngBounds(MAP_CONFIG.maxBounds),
-      maxBoundsViscosity: 1.0,
-    });
+    let invalidateTimer: ReturnType<typeof setTimeout> | null = null;
+    let map: L.Map | null = null;
+    let cancelled = false;
 
-    L.tileLayer(MAP_CONFIG.tileUrl, {
-      attribution: MAP_CONFIG.attribution,
-      maxZoom: MAP_CONFIG.maxZoom,
-      minZoom: MAP_CONFIG.minZoom,
-    }).addTo(map);
+    async function initMap() {
+      const leafletWindow = window as Window & { L?: typeof L };
+      leafletWindow.L = L;
 
-    const sosCluster = L.markerClusterGroup({
-      maxClusterRadius: 50,
-      disableClusteringAtZoom: 16,
-      spiderfyOnMaxZoom: true,
-      chunkedLoading: true,
-      chunkInterval: 50,
-      chunkDelay: 10,
-      showCoverageOnHover: false,
-      iconCreateFunction(cluster) {
-        const count = cluster.getChildCount();
-        return L.divIcon({
-          className: "",
-          html: `
-            <div style="
-              width:40px;
-              height:40px;
-              border-radius:9999px;
-              background:#ef4444;
-              color:white;
-              border:3px solid #ffffff;
-              box-shadow:0 0 0 5px rgba(239,68,68,0.18), 0 8px 18px rgba(0,0,0,0.35);
-              display:flex;
-              align-items:center;
-              justify-content:center;
-              font-weight:800;
-              font-size:13px;
-            ">
-              ${count}
-            </div>
-          `,
-          iconSize: [40, 40],
-          iconAnchor: [20, 20],
-        });
-      },
-    });
+      await import("leaflet.markercluster");
+      await import("leaflet.heat");
 
-    const responderLayer = L.layerGroup();
-    const evacLayer = L.layerGroup();
-    const routeLayer = L.layerGroup();
+      if (cancelled || !containerRef.current) return;
 
-    map.addLayer(sosCluster);
-    map.addLayer(responderLayer);
-    map.addLayer(evacLayer);
-    map.addLayer(routeLayer);
+      map = L.map(containerRef.current, {
+        center: MAP_CONFIG.defaultCenter,
+        zoom: MAP_CONFIG.defaultZoom,
+        maxBounds: L.latLngBounds(MAP_CONFIG.maxBounds),
+        maxBoundsViscosity: 1.0,
+      });
 
-    mapRef.current = map;
-    sosClusterRef.current = sosCluster;
-    responderLayerRef.current = responderLayer;
-    evacLayerRef.current = evacLayer;
-    routeLayerRef.current = routeLayer;
+      L.tileLayer(MAP_CONFIG.tileUrl, {
+        attribution: MAP_CONFIG.attribution,
+        maxZoom: MAP_CONFIG.maxZoom,
+        minZoom: MAP_CONFIG.minZoom,
+      }).addTo(map);
 
-    const invalidateTimer = setTimeout(() => {
-      if (!disposedRef.current) map.invalidateSize();
-    }, 100);
+      const sosCluster = L.markerClusterGroup({
+        maxClusterRadius: 50,
+        disableClusteringAtZoom: 16,
+        spiderfyOnMaxZoom: true,
+        chunkedLoading: true,
+        chunkInterval: 50,
+        chunkDelay: 10,
+        showCoverageOnHover: false,
+        iconCreateFunction(cluster) {
+          const count = cluster.getChildCount();
+          return L.divIcon({
+            className: "",
+            html: `
+              <div style="
+                width:40px;
+                height:40px;
+                border-radius:9999px;
+                background:#ef4444;
+                color:white;
+                border:3px solid #ffffff;
+                box-shadow:0 0 0 5px rgba(239,68,68,0.18), 0 8px 18px rgba(0,0,0,0.35);
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                font-weight:800;
+                font-size:13px;
+              ">
+                ${count}
+              </div>
+            `,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
+          });
+        },
+      });
+
+      const responderLayer = L.layerGroup();
+      const evacLayer = L.layerGroup();
+      const routeLayer = L.layerGroup();
+
+      map.addLayer(sosCluster);
+      map.addLayer(responderLayer);
+      map.addLayer(evacLayer);
+      map.addLayer(routeLayer);
+
+      mapRef.current = map;
+      sosClusterRef.current = sosCluster;
+      responderLayerRef.current = responderLayer;
+      evacLayerRef.current = evacLayer;
+      routeLayerRef.current = routeLayer;
+
+      invalidateTimer = setTimeout(() => {
+        if (!disposedRef.current && map) map.invalidateSize();
+      }, 100);
+    }
+
+    void initMap();
 
     return () => {
+      cancelled = true;
       disposedRef.current = true;
-      clearTimeout(invalidateTimer);
+
+      if (invalidateTimer) {
+        clearTimeout(invalidateTimer);
+      }
 
       try {
-        map.remove();
+        map?.remove();
       } catch {
         // cleanup only
       }
