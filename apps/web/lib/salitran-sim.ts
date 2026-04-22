@@ -6,6 +6,15 @@ export const SALITRAN_SIM_STORAGE_KEY = "kabayan.salitranSimSession";
 export const BARANGAY_FILTER_STORAGE_KEY = "kabayan.barangayFilter";
 
 export type FloodSeverity = "low" | "moderate" | "high" | "critical";
+export type SalitranRunMode = "setup_only" | "setup_and_trigger";
+export type SalitranSpeedPreset = "normal" | "fast";
+export type SalitranSimulationStatus =
+  | "armed"
+  | "prepared"
+  | "running"
+  | "paused"
+  | "complete"
+  | "blocked";
 
 export interface DemoPoint {
   label: string;
@@ -50,6 +59,13 @@ export interface SalitranSimSession {
   scenarioId: string;
   scenarioTitle: string;
   startedAt: string;
+  runMode?: SalitranRunMode;
+  speedPreset?: SalitranSpeedPreset;
+  status?: SalitranSimulationStatus;
+  seededIncidentIds?: string[];
+  stagedResponderIds?: string[];
+  openedEvacNames?: string[];
+  notes?: string[];
 }
 
 const PRIMARY_EVAC: DemoEvacCenterSeed = {
@@ -59,7 +75,7 @@ const PRIMARY_EVAC: DemoEvacCenterSeed = {
   lat: 14.351817,
   lng: 120.954085,
   notes:
-    "Hardcoded Phase 2 demo evac. Backend opening/resolution comes in the next phase.",
+    "Phase 3 opens existing Salitran IV evac center rows in the database if present.",
 };
 
 const RESPONDER_STAGING: DemoResponderStaging[] = [
@@ -98,8 +114,8 @@ export const SALITRAN_SCENARIOS: SalitranScenarioDef[] = [
       "Use the simplest Salitran IV run for baseline demonstration and panel explanations.",
     expected: [
       "Barangay filter is forced to Salitran IV",
-      "One incident seed is ready for the future setup trigger",
-      "Primary evac and responder staging are visible in the scenario pack",
+      "One incident seed is inserted",
+      "One staged responder is enough to explain the expected flow",
     ],
     primaryEvac: PRIMARY_EVAC,
     responderStaging: [RESPONDER_STAGING[0], RESPONDER_STAGING[1]],
@@ -124,7 +140,7 @@ export const SALITRAN_SCENARIOS: SalitranScenarioDef[] = [
     objective:
       "Prepare a fixed two-household Salitran IV route demo with one primary responder and one standby responder.",
     expected: [
-      "Two fixed request points are inside Salitran IV",
+      "Two fixed request points are inserted",
       "Scenario is ready for future route and movement automation",
       "Responder staging uses Alpha-1 and Bravo-1",
     ],
@@ -233,6 +249,15 @@ export const SALITRAN_SCENARIOS: SalitranScenarioDef[] = [
 
 export function startSalitranSimulationSession(
   scenario: SalitranScenarioDef,
+  options?: {
+    runMode?: SalitranRunMode;
+    speedPreset?: SalitranSpeedPreset;
+    seededIncidentIds?: string[];
+    stagedResponderIds?: string[];
+    openedEvacNames?: string[];
+    notes?: string[];
+    status?: SalitranSimulationStatus;
+  },
 ): void {
   if (typeof window === "undefined") return;
 
@@ -242,6 +267,13 @@ export function startSalitranSimulationSession(
     scenarioId: scenario.id,
     scenarioTitle: scenario.title,
     startedAt: new Date().toISOString(),
+    runMode: options?.runMode,
+    speedPreset: options?.speedPreset ?? "normal",
+    seededIncidentIds: options?.seededIncidentIds ?? [],
+    stagedResponderIds: options?.stagedResponderIds ?? [],
+    openedEvacNames: options?.openedEvacNames ?? [],
+    notes: options?.notes ?? [],
+    status: options?.status ?? "armed",
   };
 
   sessionStorage.setItem(SALITRAN_SIM_STORAGE_KEY, JSON.stringify(session));
@@ -262,6 +294,23 @@ export function readSalitranSimulationSession(): SalitranSimSession | null {
   }
 }
 
+export function updateSalitranSimulationSession(
+  patch: Partial<SalitranSimSession>,
+): SalitranSimSession | null {
+  if (typeof window === "undefined") return null;
+
+  const current = readSalitranSimulationSession();
+  if (!current) return null;
+
+  const next = {
+    ...current,
+    ...patch,
+  };
+
+  sessionStorage.setItem(SALITRAN_SIM_STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
 export function clearSalitranSimulationSession(options?: {
   clearBarangayFilter?: boolean;
 }) {
@@ -274,15 +323,7 @@ export function clearSalitranSimulationSession(options?: {
   }
 }
 
-// ── Polygon validation helpers for Phase 2 ───────────────────
-export interface PolygonFeature {
-  properties?: { name?: string };
-  geometry?: {
-    type?: string;
-    coordinates?: number[][][];
-  };
-}
-
+// ── Polygon validation helpers ───────────────────────────────
 export function pointInPolygon(
   lng: number,
   lat: number,

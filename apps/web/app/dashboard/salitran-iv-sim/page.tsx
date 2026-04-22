@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  CheckCircle2,
   MapPin,
   PlayCircle,
   ArrowRight,
@@ -32,6 +33,14 @@ interface ValidationState {
     kind: "incident" | "staging" | "evac";
   }>;
 }
+
+const DEMO_CHECKLIST = [
+  "Salitran IV polygon validation passes",
+  "Scenario uses fixed request points only",
+  "Responders are staged before the run starts",
+  "Evac center rows open cleanly for the run",
+  "Dashboard shows controls and live feed without manual debugging",
+];
 
 export default function SalitranIVSimPage() {
   const router = useRouter();
@@ -135,10 +144,8 @@ export default function SalitranIVSimPage() {
         </div>
 
         <p className="max-w-4xl text-sm text-gray-300">
-          Phase 3 adds the simulation director. Starting a scenario now resets
-          the previous simulation, opens Salitran IV evac center rows, stages
-          responders at fixed points, inserts the hardcoded request dataset, and
-          optionally triggers the assignment engine.
+          Phase 6 is demo polish. This page now acts as a cleaner launcher for
+          reruns, thesis-defense demonstrations, and quick pre-run checks.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
@@ -147,10 +154,10 @@ export default function SalitranIVSimPage() {
             Fixed barangay: {SALITRAN_IV_NAME}
           </span>
           <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1 text-violet-100/80">
-            Reuses existing Dev API
+            Thesis-defense mode
           </span>
           <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1 text-violet-100/80">
-            Hardcoded data, minimal backend cost
+            Still low-cost and hardcoded
           </span>
         </div>
 
@@ -175,6 +182,27 @@ export default function SalitranIVSimPage() {
               ))}
             </div>
           )}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+            <p className="text-sm font-medium text-white">
+              Demo readiness checklist
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {DEMO_CHECKLIST.map((item) => (
+              <div
+                key={item}
+                className="flex items-start gap-2 rounded-lg border border-gray-800 bg-gray-900/70 px-3 py-2"
+              >
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                <span className="text-sm text-gray-300">{item}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {pageError && (

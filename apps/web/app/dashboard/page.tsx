@@ -2,7 +2,9 @@
 
 import dynamic from "next/dynamic";
 import { CompactDashboardStats } from "../../components/dashboard/CompactDashboardStats";
+import { FloatingSimulationLogPanel } from "../../components/dashboard/FloatingSimulationLogPanel";
 import { SimulationModeBanner } from "../../components/dashboard/SimulationModeBanner";
+import { SalitranSimulationControls } from "../../components/dashboard/SalitranSimulationControls";
 
 const LiveMapView = dynamic(() => import("../../components/map/LiveMapView"), {
   ssr: false,
@@ -20,12 +22,15 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       <SimulationModeBanner />
+      <SalitranSimulationControls />
       <CompactDashboardStats />
 
-      <div className="overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
+      <div className="relative overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
         <div className="h-[calc(100vh-13.5rem)] min-h-[620px]">
           <LiveMapView />
         </div>
+
+        <FloatingSimulationLogPanel />
       </div>
     </div>
   );
