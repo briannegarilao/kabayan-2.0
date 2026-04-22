@@ -16,8 +16,21 @@ def _unwrap_rpc_data(data: Any) -> Any:
 def run_dev_reset(mode: str = "soft") -> dict:
     supabase = get_supabase()
 
-    result = supabase.rpc("dev_reset", {"mode": mode}).execute()
-    data = _unwrap_rpc_data(result.data)
+    try:
+        result = supabase.rpc("dev_reset", {"mode": mode}).execute()
+        data = _unwrap_rpc_data(result.data)
+    except Exception as e:
+        add_dev_log(
+            source="DEV",
+            level="ERROR",
+            event="reset_failed",
+            message=f"Dev Console reset failed ({mode})",
+            metadata={"mode": mode, "error": str(e)},
+        )
+        raise
+
+    if data is None:
+        data = {}
 
     add_dev_log(
         source="DEV",
@@ -27,7 +40,7 @@ def run_dev_reset(mode: str = "soft") -> dict:
         metadata={"mode": mode, "result": data},
     )
 
-    return data or {}
+    return data
 
 
 def clear_active_simulated_trips() -> dict:
@@ -39,7 +52,6 @@ def clear_active_simulated_trips() -> dict:
     active_trips_result = (
         supabase.table("trip_plans")
         .select("id, responder_id")
-        .eq("is_simulated", True)
         .eq("status", "active")
         .execute()
     )
