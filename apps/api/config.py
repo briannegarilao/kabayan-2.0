@@ -11,24 +11,24 @@ class Settings(BaseSettings):
 
     # Supabase
     SUPABASE_URL: str
-    SUPABASE_SERVICE_ROLE_KEY: str  # Admin key — bypasses RLS
+    SUPABASE_SERVICE_ROLE_KEY: str
 
-    # OSRM routing (free public demo server for dev)
+    # OSRM routing
     OSRM_BASE_URL: str = "http://router.project-osrm.org"
 
-    # Hugging Face YOLOv8n inference (Phase 6 — optional for now)
+    # Hugging Face
     HF_INFERENCE_URL: str = ""
 
     # Expo Push Notifications
     EXPO_ACCESS_TOKEN: str = ""
 
-    # CORS origins allowed to call this API
+    # CORS
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "https://kabayan.vercel.app",
     ]
 
-    # Dasmariñas City coordinates
+    # Dasmariñas coordinates
     DASMA_LAT: float = 14.3294
     DASMA_LNG: float = 120.9367
 
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # App environment
     APP_ENV: str = "development"  # development | staging | production
 
-    # Dev Console controls
+    # Dev Console flags
     DEV_CONSOLE_ENABLED: bool = False
     DEV_CONSOLE_ADMIN_ENABLED: bool = False
 
@@ -63,11 +63,6 @@ class Settings(BaseSettings):
 
     @property
     def dev_console_backend_enabled(self) -> bool:
-        """
-        Backend rule:
-        - always allow in development if DEV_CONSOLE_ENABLED=true
-        - optionally allow later in staging/production if DEV_CONSOLE_ADMIN_ENABLED=true
-        """
         if not self.DEV_CONSOLE_ENABLED:
             return False
 
@@ -79,5 +74,4 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Cached — parsed once at startup, reused for every request."""
     return Settings()

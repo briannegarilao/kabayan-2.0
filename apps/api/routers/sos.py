@@ -5,11 +5,10 @@ from typing import Optional
 from services.supabase_client import get_supabase
 from services.assignment import auto_assign_responder
 from services.notifications import notify_lgu_new_sos
+from services.dev_logs import add_dev_log, new_trace_id
 
 router = APIRouter()
 
-
-# ── Request/Response Models ───────────────────────────────────────────
 
 class SOSCreateRequest(BaseModel):
     reporter_id: str
@@ -19,7 +18,7 @@ class SOSCreateRequest(BaseModel):
     message: Optional[str] = None
     image_url: Optional[str] = None
     people_count: int = Field(default=1, ge=1, le=50)
-    vulnerability_flags: Optional[list[str]] = None  # ["children", "elderly", "disabled", "medical"]
+    vulnerability_flags: Optional[list[str]] = None
 
 
 class SOSResponse(BaseModel):
@@ -28,22 +27,14 @@ class SOSResponse(BaseModel):
     message: str
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────
-
 @router.post("/create", response_model=SOSResponse)
 async def create_sos(
     payload: SOSCreateRequest,
     background_tasks: BackgroundTasks,
     supabase=Depends(get_supabase),
 ):
-    """
-    Citizen submits an SOS.
-    1. Insert into sos_incidents (status: pending)
-    2. Return 200 immediately (< 200ms target)
-    3. BackgroundTask: auto-assign nearest responder
-    4. BackgroundTask: notify LGU dashboard (Realtime handles this automatically)
-    """
-    # PostGIS geography point: POINT(longitude latitude)
+    trace_id = new_trace_id("sos")
+
     location_wkt = f"POINT({payload.longitude} {payload.latitude})"
 
     insert_data = {
@@ -60,15 +51,49 @@ async def create_sos(
     result = supabase.table("sos_incidents").insert(insert_data).execute()
 
     if not result.data:
+        add_dev_log(
+            source="SOS",
+            level="ERROR",
+            event="sos_create_failed",
+            message="Failed to create SOS incident",
+            metadata={"trace_id": trace_id, "barangay": payload.barangay},
+        )
         raise HTTPException(status_code=500, detail="Failed to create SOS incident")
 
     incident_id = result.data[0]["id"]
 
-    # Fire background tasks — citizen NEVER waits for these
+    add_dev_log(
+        source="SOS",
+        level="INFO",
+        event="sos_created",
+        message=f"SOS created for barangay {payload.barangay}",
+        metadata={
+            "trace_id": trace_id,
+            "incident_id": incident_id,
+            "reporter_id": payload.reporter_id,
+            "barangay": payload.barangay,
+            "people_count": payload.people_count,
+            "has_image": bool(payload.image_url),
+            "vulnerability_flags": payload.vulnerability_flags or [],
+        },
+    )
+
     background_tasks.add_task(
         auto_assign_responder, incident_id, payload.latitude, payload.longitude
     )
     background_tasks.add_task(notify_lgu_new_sos, incident_id, payload.barangay)
+
+    add_dev_log(
+        source="SOS",
+        level="INFO",
+        event="sos_background_tasks_queued",
+        message=f"Queued background tasks for incident {incident_id}",
+        metadata={
+            "trace_id": trace_id,
+            "incident_id": incident_id,
+            "tasks": ["auto_assign_responder", "notify_lgu_new_sos"],
+        },
+    )
 
     return SOSResponse(
         success=True,
@@ -82,7 +107,6 @@ async def get_active_incidents(
     barangay: Optional[str] = Query(None, description="Filter by barangay"),
     supabase=Depends(get_supabase),
 ):
-    """Fetch all active (non-resolved) incidents. Used by dashboard + responder app."""
     query = (
         supabase.table("sos_incidents")
         .select(
@@ -107,7 +131,6 @@ async def get_my_incidents(
     reporter_id: str = Query(..., description="The citizen's user ID"),
     supabase=Depends(get_supabase),
 ):
-    """Citizen views their own SOS history with statuses."""
     result = (
         supabase.table("sos_incidents")
         .select(
@@ -127,7 +150,6 @@ async def get_incident_detail(
     incident_id: str,
     supabase=Depends(get_supabase),
 ):
-    """Get full details of a specific incident."""
     result = (
         supabase.table("sos_incidents")
         .select("*")

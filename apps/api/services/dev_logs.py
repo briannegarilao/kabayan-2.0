@@ -5,6 +5,7 @@ from collections import deque
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Literal, TypedDict
+from uuid import uuid4
 
 
 LogSource = Literal["SYSTEM", "ENGINE", "SOS", "RESPONDER", "SIM", "DB", "REALTIME", "DEV"]
@@ -22,6 +23,10 @@ class DevLogEntry(TypedDict):
 
 _LOG_BUFFER: deque[DevLogEntry] = deque(maxlen=500)
 _LOG_LOCK = Lock()
+
+
+def new_trace_id(prefix: str = "trace") -> str:
+    return f"{prefix}_{uuid4().hex[:12]}"
 
 
 def add_dev_log(
@@ -44,7 +49,6 @@ def add_dev_log(
     with _LOG_LOCK:
         _LOG_BUFFER.append(entry)
 
-    # Keep console printing for local dev visibility
     print(f"[{entry['source']}][{entry['level']}][{entry['event']}] {entry['message']}")
     return entry
 

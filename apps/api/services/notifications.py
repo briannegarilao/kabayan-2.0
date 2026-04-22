@@ -25,12 +25,14 @@ async def send_push(expo_token: str, title: str, body: str, data: dict | None = 
             )
             return resp.status_code == 200
     except httpx.HTTPError:
-        # Push failures are non-critical — log but don't crash
         return False
 
 
 async def notify_responder_assignment(responder_id: str, incident_id: str) -> None:
     """Push notification to the assigned responder."""
+    if not responder_id:
+        return
+
     supabase = get_supabase()
     result = (
         supabase.table("users")
@@ -53,7 +55,6 @@ async def notify_citizen_status_change(incident_id: str, new_status: str) -> Non
     """Push notification to the citizen who filed the SOS."""
     supabase = get_supabase()
 
-    # Get the reporter's push token
     incident = (
         supabase.table("sos_incidents")
         .select("reporter_id")
@@ -65,10 +66,16 @@ async def notify_citizen_status_change(incident_id: str, new_status: str) -> Non
     if not incident.data:
         return
 
+    reporter_id = incident.data.get("reporter_id")
+
+    # Important for simulated incidents created without a real reporter
+    if not reporter_id:
+        return
+
     user = (
         supabase.table("users")
         .select("expo_push_token")
-        .eq("id", incident.data["reporter_id"])
+        .eq("id", reporter_id)
         .maybe_single()
         .execute()
     )
@@ -77,12 +84,24 @@ async def notify_citizen_status_change(incident_id: str, new_status: str) -> Non
         return
 
     messages = {
-        "assigned": ("Responder Assigned", "A rescue team has been assigned to your SOS. Help is on the way."),
-        "in_progress": ("Responder En Route", "A rescue team is heading to your location. Stay visible and safe."),
-        "resolved": ("Incident Resolved", "Your SOS has been resolved. Stay safe."),
+        "assigned": (
+            "Responder Assigned",
+            "A rescue team has been assigned to your SOS. Help is on the way.",
+        ),
+        "in_progress": (
+            "Responder En Route",
+            "A rescue team is heading to your location. Stay visible and safe.",
+        ),
+        "resolved": (
+            "Incident Resolved",
+            "Your SOS has been resolved. Stay safe.",
+        ),
     }
 
-    title, body = messages.get(new_status, ("Status Update", f"Your SOS status is now: {new_status}"))
+    title, body = messages.get(
+        new_status,
+        ("Status Update", f"Your SOS status is now: {new_status}")
+    )
 
     await send_push(
         expo_token=user.data["expo_push_token"],
