@@ -75,7 +75,7 @@ const PRIMARY_EVAC: DemoEvacCenterSeed = {
   lat: 14.351817,
   lng: 120.954085,
   notes:
-    "Phase 3 opens existing Salitran IV evac center rows in the database if present.",
+    "Phase 1 uses this as the fixed Salitran IV evac target. Existing Salitran IV rows are opened when present.",
 };
 
 const RESPONDER_STAGING: DemoResponderStaging[] = [
@@ -258,7 +258,7 @@ export function startSalitranSimulationSession(
     notes?: string[];
     status?: SalitranSimulationStatus;
   },
-): void {
+) {
   if (typeof window === "undefined") return;
 
   const session: SalitranSimSession = {
@@ -277,13 +277,11 @@ export function startSalitranSimulationSession(
   };
 
   sessionStorage.setItem(SALITRAN_SIM_STORAGE_KEY, JSON.stringify(session));
-
   sessionStorage.setItem(BARANGAY_FILTER_STORAGE_KEY, SALITRAN_IV_NAME);
 }
 
 export function readSalitranSimulationSession(): SalitranSimSession | null {
   if (typeof window === "undefined") return null;
-
   const raw = sessionStorage.getItem(SALITRAN_SIM_STORAGE_KEY);
   if (!raw) return null;
 
@@ -302,11 +300,7 @@ export function updateSalitranSimulationSession(
   const current = readSalitranSimulationSession();
   if (!current) return null;
 
-  const next = {
-    ...current,
-    ...patch,
-  };
-
+  const next = { ...current, ...patch };
   sessionStorage.setItem(SALITRAN_SIM_STORAGE_KEY, JSON.stringify(next));
   return next;
 }
@@ -315,7 +309,6 @@ export function clearSalitranSimulationSession(options?: {
   clearBarangayFilter?: boolean;
 }) {
   if (typeof window === "undefined") return;
-
   sessionStorage.removeItem(SALITRAN_SIM_STORAGE_KEY);
 
   if (options?.clearBarangayFilter) {
@@ -323,7 +316,7 @@ export function clearSalitranSimulationSession(options?: {
   }
 }
 
-// ── Polygon validation helpers ───────────────────────────────
+// polygon helpers
 export function pointInPolygon(
   lng: number,
   lat: number,
@@ -358,7 +351,6 @@ export function getSalitranIVPolygon(
 
   const coords = feat?.geometry?.coordinates?.[0];
   if (!Array.isArray(coords)) return null;
-
   return coords as number[][];
 }
 

@@ -1,3 +1,4 @@
+// apps/web/app/dashboard/page.tsx
 "use client";
 
 import dynamic from "next/dynamic";
@@ -5,6 +6,7 @@ import { CompactDashboardStats } from "../../components/dashboard/CompactDashboa
 import { FloatingSimulationLogPanel } from "../../components/dashboard/FloatingSimulationLogPanel";
 import { SimulationModeBanner } from "../../components/dashboard/SimulationModeBanner";
 import { SalitranSimulationControls } from "../../components/dashboard/SalitranSimulationControls";
+import { SalitranSimulationModeSync } from "../../components/dashboard/SalitranSimulationModeSync";
 
 const LiveMapView = dynamic(() => import("../../components/map/LiveMapView"), {
   ssr: false,
@@ -21,6 +23,7 @@ const LiveMapView = dynamic(() => import("../../components/map/LiveMapView"), {
 export default function DashboardPage() {
   return (
     <div className="space-y-4">
+      <SalitranSimulationModeSync />
       <SimulationModeBanner />
       <SalitranSimulationControls />
       <CompactDashboardStats />

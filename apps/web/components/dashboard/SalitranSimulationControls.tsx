@@ -1,3 +1,4 @@
+// apps/web/components/dashboard/SalitranSimulationControls.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -48,9 +49,7 @@ export function SalitranSimulationControls() {
     const stored = readSalitranSimulationSession();
     setSession(stored);
 
-    if (stored?.speedPreset) {
-      setSpeedPreset(stored.speedPreset);
-    }
+    if (stored?.speedPreset) setSpeedPreset(stored.speedPreset);
 
     if (
       stored?.runMode === "setup_and_trigger" &&
@@ -61,9 +60,10 @@ export function SalitranSimulationControls() {
     }
   }, []);
 
-  const tickMs = useMemo(() => {
-    return speedPreset === "fast" ? 1200 : 2500;
-  }, [speedPreset]);
+  const tickMs = useMemo(
+    () => (speedPreset === "fast" ? 1200 : 2500),
+    [speedPreset],
+  );
 
   const targetSimulationLabel = useMemo(() => {
     if (!session) return null;
@@ -99,10 +99,7 @@ export function SalitranSimulationControls() {
     setActiveTripCount(activeTrips.length);
     setActiveIncidentCount(activeIncidents.length);
 
-    return {
-      activeTrips,
-      activeIncidents,
-    };
+    return { activeTrips, activeIncidents };
   }
 
   function syncSessionPatch(patch: Partial<SalitranSimSession>) {
@@ -183,7 +180,6 @@ export function SalitranSimulationControls() {
     async function loop() {
       if (cancelled) return;
       await advanceOneStep();
-
       if (cancelled) return;
       timerRef.current = window.setTimeout(loop, tickMs);
     }
@@ -337,18 +333,6 @@ export function SalitranSimulationControls() {
       <div className="mt-3 rounded-xl border border-gray-800 bg-gray-950/50 px-3 py-2">
         <p className="text-xs text-gray-300">{statusText}</p>
       </div>
-
-      {isComplete && (
-        <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-3">
-          <p className="text-sm font-semibold text-emerald-200">
-            Scenario complete
-          </p>
-          <p className="mt-1 text-xs text-emerald-100/80">
-            You can rerun from the launcher, or keep this dashboard open for
-            Q&amp;A.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

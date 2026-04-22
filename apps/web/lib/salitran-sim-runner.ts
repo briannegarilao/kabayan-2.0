@@ -1,3 +1,4 @@
+// apps/web/lib/salitran-sim-runner.ts
 "use client";
 
 import { createClient } from "./supabase/client";
@@ -28,11 +29,11 @@ export async function prepareSalitranScenarioRun(params: {
   const seededIncidentIds: string[] = [];
   const openedEvacNames: string[] = [];
 
-  // 1) Always reset previous simulation state first
+  // 1) full reset first
   await postDevReset("full");
   notes.push("Previous simulation state was fully reset.");
 
-  // 2) Open Salitran IV evac center rows if present
+  // 2) open Salitran IV evac center rows if present
   const evacLookup = await supabase
     .from("evacuation_centers")
     .select("id, name, barangay")
@@ -65,11 +66,11 @@ export async function prepareSalitranScenarioRun(params: {
     notes.push(`Opened ${evacRows.length} Salitran IV evac center row(s).`);
   } else {
     notes.push(
-      "No existing Salitran IV evac center rows found. Phase 3 continued without DB evac activation.",
+      "No existing Salitran IV evac rows found. Continuing with fixed client-side demo context.",
     );
   }
 
-  // 3) Resolve responders to stage
+  // 3) pick responders to stage
   const responderLookup = await supabase
     .from("responders")
     .select("id")
@@ -89,11 +90,10 @@ export async function prepareSalitranScenarioRun(params: {
     );
   }
 
-  // 4) Force responder statuses and locations
+  // 4) stage responders
   for (let i = 0; i < responderRows.length; i++) {
     const responder = responderRows[i];
     const staging = scenario.responderStaging[i];
-
     if (!staging) continue;
 
     const forceResult = await postForceResponderStatus({
@@ -105,18 +105,14 @@ export async function prepareSalitranScenarioRun(params: {
       longitude: staging.lng,
     });
 
-    if (forceResult?.responder?.id) {
-      stagedResponderIds.push(forceResult.responder.id);
-    } else {
-      stagedResponderIds.push(responder.id);
-    }
+    stagedResponderIds.push(forceResult?.responder?.id ?? responder.id);
   }
 
   notes.push(
     `Staged ${stagedResponderIds.length} responder(s) for ${scenario.title}.`,
   );
 
-  // 5) Seed incidents
+  // 5) seed incidents
   for (let i = 0; i < scenario.incidentSeeds.length; i++) {
     const seed = scenario.incidentSeeds[i];
     const isLast = i === scenario.incidentSeeds.length - 1;
@@ -147,7 +143,7 @@ export async function prepareSalitranScenarioRun(params: {
     );
   }
 
-  // 6) Persist client-side session state
+  // 6) persist client-side sim session
   startSalitranSimulationSession(scenario, {
     runMode,
     seededIncidentIds,

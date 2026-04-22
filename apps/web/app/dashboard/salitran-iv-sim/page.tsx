@@ -1,3 +1,4 @@
+// apps/web/app/dashboard/salitran-iv-sim/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -69,11 +70,7 @@ export default function SalitranIVSimPage() {
         const polygon = getSalitranIVPolygon(geo);
         if (!polygon) {
           if (mounted) {
-            setValidation({
-              total: 0,
-              passed: 0,
-              failed: [],
-            });
+            setValidation({ total: 0, passed: 0, failed: [] });
           }
           return;
         }
@@ -86,11 +83,7 @@ export default function SalitranIVSimPage() {
         if (mounted) setValidation(result);
       } catch {
         if (mounted) {
-          setValidation({
-            total: 0,
-            passed: 0,
-            failed: [],
-          });
+          setValidation({ total: 0, passed: 0, failed: [] });
         }
       } finally {
         if (mounted) setValidationLoading(false);
@@ -109,11 +102,7 @@ export default function SalitranIVSimPage() {
     setStartingId(scenario.id);
 
     try {
-      await prepareSalitranScenarioRun({
-        scenario,
-        runMode,
-      });
-
+      await prepareSalitranScenarioRun({ scenario, runMode });
       router.push("/dashboard");
     } catch (error) {
       setPageError(
@@ -144,8 +133,9 @@ export default function SalitranIVSimPage() {
         </div>
 
         <p className="max-w-4xl text-sm text-gray-300">
-          Phase 6 is demo polish. This page now acts as a cleaner launcher for
-          reruns, thesis-defense demonstrations, and quick pre-run checks.
+          Fixed-data launcher for repeatable Salitran IV demos. This is Phase 1:
+          prepare, stage, seed, trigger, then move to the Dashboard as the live
+          theater view.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
@@ -157,7 +147,7 @@ export default function SalitranIVSimPage() {
             Thesis-defense mode
           </span>
           <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1 text-violet-100/80">
-            Still low-cost and hardcoded
+            Low-cost and hardcoded
           </span>
         </div>
 
@@ -182,27 +172,6 @@ export default function SalitranIVSimPage() {
               ))}
             </div>
           )}
-        </div>
-
-        <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/60 p-4">
-          <div className="mb-2 flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-            <p className="text-sm font-medium text-white">
-              Demo readiness checklist
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            {DEMO_CHECKLIST.map((item) => (
-              <div
-                key={item}
-                className="flex items-start gap-2 rounded-lg border border-gray-800 bg-gray-900/70 px-3 py-2"
-              >
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                <span className="text-sm text-gray-300">{item}</span>
-              </div>
-            ))}
-          </div>
         </div>
 
         {pageError && (

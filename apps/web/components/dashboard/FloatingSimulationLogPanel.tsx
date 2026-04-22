@@ -1,3 +1,4 @@
+// apps/web/components/dashboard/FloatingSimulationLogPanel.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -116,48 +117,6 @@ function getLogVisual(log: DevLogEntry) {
   };
 }
 
-function summarizeMetadata(log: DevLogEntry): string | null {
-  const meta = log.metadata ?? {};
-
-  if (log.event === "seed_sos") {
-    const count = meta.count ?? 0;
-    const barangay = meta.barangay ?? "Unknown";
-    return `${count} seeded in ${barangay}`;
-  }
-
-  if (log.event === "force_status") {
-    return meta.current_location
-      ? "Responder location updated for scenario staging"
-      : "Responder readiness updated";
-  }
-
-  if (log.event === "simulation_accept") {
-    return meta.updated_incident_ids?.length
-      ? `${meta.updated_incident_ids.length} incident(s) marked in progress`
-      : "Trip accepted by simulation auto-step";
-  }
-
-  if (log.event === "simulation_pickup") {
-    const load = meta.current_load;
-    return typeof load === "number"
-      ? `Responder load is now ${load}`
-      : "Pickup state advanced";
-  }
-
-  if (log.event === "simulation_dropoff") {
-    const people = meta.people_dropped;
-    return typeof people === "number"
-      ? `${people} person(s) dropped at evac center`
-      : "Trip completed and responder released";
-  }
-
-  if (log.event === "reset") {
-    return "Simulation environment was reset before scenario run";
-  }
-
-  return null;
-}
-
 export function FloatingSimulationLogPanel() {
   const [session, setSession] = useState<SalitranSimSession | null>(null);
   const [logs, setLogs] = useState<DevLogEntry[]>([]);
@@ -179,9 +138,7 @@ export function FloatingSimulationLogPanel() {
       try {
         const res = await getDevLogs({ n: 200 });
         if (cancelled) return;
-
-        const items = (res?.logs ?? []) as DevLogEntry[];
-        setLogs(items);
+        setLogs((res?.logs ?? []) as DevLogEntry[]);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -210,10 +167,8 @@ export function FloatingSimulationLogPanel() {
 
   useEffect(() => {
     if (!scrollRef.current || collapsed) return;
-
     const el = scrollRef.current;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-
     if (distanceFromBottom < 80) {
       el.scrollTop = el.scrollHeight;
     }
@@ -294,7 +249,6 @@ export function FloatingSimulationLogPanel() {
             filteredLogs.map((log, index) => {
               const visual = getLogVisual(log);
               const Icon = visual.icon;
-              const metaText = summarizeMetadata(log);
 
               return (
                 <div
@@ -330,10 +284,6 @@ export function FloatingSimulationLogPanel() {
                   </div>
 
                   <p className="text-sm text-white/90">{log.message}</p>
-
-                  {metaText && (
-                    <p className="mt-2 text-xs text-white/70">{metaText}</p>
-                  )}
                 </div>
               );
             })
