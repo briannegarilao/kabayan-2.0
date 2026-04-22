@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -9,8 +9,6 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import "leaflet.heat";
 
-import { createClient } from "../../lib/supabase/client";
-import { MAP_CONFIG } from "../../lib/map-config";
 import { parseLocation } from "../../lib/types";
 import { useBarangayFilter } from "../../lib/barangay-filter";
 import { matchesResponderBarangay } from "./barangay-utils";
@@ -19,51 +17,66 @@ import { MapLegend } from "./MapLegend";
 import { MapSidePanel } from "./MapSidePanel";
 import { buildSOSPopup, buildResponderPopup, buildEvacPopup } from "./popups";
 import { addStyledRouteToLayer, tripColor } from "./route-styles";
-import type {
-  BarangaysGeoJSON,
-  BoundaryGeoJSON,
-  EvacCenter,
-  Responder,
-  SOSIncident,
-  TabId,
-  TripPlan,
-} from "./types";
-
-const supabase = createClient();
+import { useLeafletMap } from "./hooks/useLeafletMap";
+import { useLiveMapData } from "./hooks/useLiveMapData";
+import { useMapRealtime } from "./hooks/useMapRealtime";
+import { useMapBoundaries } from "./hooks/useMapBoundaries";
+import type { TabId } from "./types";
 
 export default function LiveMapView() {
   const router = useRouter();
   const { selectedBarangay } = useBarangayFilter();
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const sosClusterRef = useRef<L.MarkerClusterGroup | null>(null);
-  const responderLayerRef = useRef<L.LayerGroup | null>(null);
-  const evacLayerRef = useRef<L.LayerGroup | null>(null);
-  const routeLayerRef = useRef<L.LayerGroup | null>(null);
-  const heatLayerRef = useRef<any>(null);
+  const {
+    containerRef,
+    mapRef,
+    sosClusterRef,
+    responderLayerRef,
+    evacLayerRef,
+    routeLayerRef,
+    heatLayerRef,
+    maskLayerRef,
+    cityOutlineRef,
+    cityGlowRef,
+    barangaysLayerRef,
+    highlightLayerRef,
+    sosMarkersRef,
+    responderMarkersRef,
+    evacMarkersRef,
+    disposedRef,
+  } = useLeafletMap();
 
-  const maskLayerRef = useRef<L.Polygon | null>(null);
-  const cityOutlineRef = useRef<L.GeoJSON | null>(null);
-  const cityGlowRef = useRef<L.GeoJSON | null>(null);
-  const barangaysLayerRef = useRef<L.GeoJSON | null>(null);
-  const highlightLayerRef = useRef<L.GeoJSON | null>(null);
+  const { cityBoundary, barangays } = useMapBoundaries({
+    mapRef,
+    disposedRef,
+    selectedBarangay,
+    showBarangays: true, // actual toggle still handled below via state
+    maskLayerRef,
+    cityOutlineRef,
+    cityGlowRef,
+    barangaysLayerRef,
+    highlightLayerRef,
+  });
 
-  const sosMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const responderMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const evacMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const {
+    incidents,
+    setIncidents,
+    responders,
+    setResponders,
+    evacCenters,
+    setEvacCenters,
+    activeTrips,
+    setActiveTrips,
+  } = useLiveMapData(selectedBarangay, disposedRef);
 
-  const disposedRef = useRef(false);
-
-  const [incidents, setIncidents] = useState<SOSIncident[]>([]);
-  const [responders, setResponders] = useState<Responder[]>([]);
-  const [evacCenters, setEvacCenters] = useState<EvacCenter[]>([]);
-  const [activeTrips, setActiveTrips] = useState<TripPlan[]>([]);
-
-  const [cityBoundary, setCityBoundary] = useState<BoundaryGeoJSON | null>(
-    null,
+  useMapRealtime(
+    selectedBarangay,
+    disposedRef,
+    setIncidents,
+    setResponders,
+    setEvacCenters,
+    setActiveTrips,
   );
-  const [barangays, setBarangays] = useState<BarangaysGeoJSON | null>(null);
 
   const [showSOS, setShowSOS] = useState(true);
   const [showResponders, setShowResponders] = useState(true);
@@ -77,222 +90,7 @@ export default function LiveMapView() {
   const [listSearch, setListSearch] = useState("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
-  // ── Load GeoJSON files once ─────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-
-    Promise.all([
-      fetch("/geo/dasma-boundary.json").then((r) => r.json()),
-      fetch("/geo/dasma-barangays.json").then((r) => r.json()),
-    ])
-      .then(([boundary, brgy]) => {
-        if (cancelled) return;
-        setCityBoundary(boundary as BoundaryGeoJSON);
-        setBarangays(brgy as BarangaysGeoJSON);
-      })
-      .catch((err) => console.error("Failed to load boundary GeoJSON:", err));
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // ── INIT MAP ────────────────────────────────────────────────
-  useEffect(() => {
-    if (mapRef.current || !containerRef.current) return;
-    disposedRef.current = false;
-
-    const map = L.map(containerRef.current, {
-      center: MAP_CONFIG.defaultCenter,
-      zoom: MAP_CONFIG.defaultZoom,
-      maxBounds: L.latLngBounds(MAP_CONFIG.maxBounds),
-      maxBoundsViscosity: 1.0,
-    });
-
-    L.tileLayer(MAP_CONFIG.tileUrl, {
-      attribution: MAP_CONFIG.attribution,
-      maxZoom: MAP_CONFIG.maxZoom,
-      minZoom: MAP_CONFIG.minZoom,
-    }).addTo(map);
-
-    const sosCluster = L.markerClusterGroup({
-      maxClusterRadius: 50,
-      disableClusteringAtZoom: 16,
-      spiderfyOnMaxZoom: true,
-      chunkedLoading: true,
-      chunkInterval: 50,
-      chunkDelay: 10,
-      showCoverageOnHover: false,
-      iconCreateFunction(cluster) {
-        const count = cluster.getChildCount();
-        return L.divIcon({
-          className: "",
-          html: `
-            <div style="
-              width:40px;
-              height:40px;
-              border-radius:9999px;
-              background:#ef4444;
-              color:white;
-              border:3px solid #ffffff;
-              box-shadow:0 0 0 5px rgba(239,68,68,0.18), 0 8px 18px rgba(0,0,0,0.35);
-              display:flex;
-              align-items:center;
-              justify-content:center;
-              font-weight:800;
-              font-size:13px;
-            ">
-              ${count}
-            </div>
-          `,
-          iconSize: [40, 40],
-          iconAnchor: [20, 20],
-        });
-      },
-    });
-
-    const responderLayer = L.layerGroup();
-    const evacLayer = L.layerGroup();
-    const routeLayer = L.layerGroup();
-
-    map.addLayer(sosCluster);
-    map.addLayer(responderLayer);
-    map.addLayer(evacLayer);
-    map.addLayer(routeLayer);
-
-    mapRef.current = map;
-    sosClusterRef.current = sosCluster;
-    responderLayerRef.current = responderLayer;
-    evacLayerRef.current = evacLayer;
-    routeLayerRef.current = routeLayer;
-
-    const invalidateTimer = setTimeout(() => {
-      if (!disposedRef.current) map.invalidateSize();
-    }, 100);
-
-    return () => {
-      disposedRef.current = true;
-      clearTimeout(invalidateTimer);
-
-      try {
-        map.remove();
-      } catch {
-        // cleanup only
-      }
-
-      mapRef.current = null;
-      sosClusterRef.current = null;
-      responderLayerRef.current = null;
-      evacLayerRef.current = null;
-      routeLayerRef.current = null;
-      heatLayerRef.current = null;
-      maskLayerRef.current = null;
-      cityOutlineRef.current = null;
-      cityGlowRef.current = null;
-      barangaysLayerRef.current = null;
-      highlightLayerRef.current = null;
-      sosMarkersRef.current.clear();
-      responderMarkersRef.current.clear();
-      evacMarkersRef.current.clear();
-    };
-  }, []);
-
-  // ── RENDER BOUNDARY OVERLAYS ────────────────────────────────
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !cityBoundary || !barangays || disposedRef.current) return;
-
-    const dasmaRing: [number, number][] =
-      cityBoundary.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]);
-
-    const worldRing: [number, number][] = [
-      [14.1, 120.6],
-      [14.1, 121.3],
-      [14.55, 121.3],
-      [14.55, 120.6],
-    ];
-
-    const mask = L.polygon([worldRing, dasmaRing], {
-      color: "transparent",
-      fillColor: "#020617",
-      fillOpacity: 0.58,
-      stroke: false,
-      interactive: false,
-    });
-    mask.addTo(map);
-    maskLayerRef.current = mask;
-
-    const cityGlow = L.geoJSON(cityBoundary as any, {
-      style: {
-        color: "#ffffff",
-        weight: 8,
-        opacity: 0.16,
-        fill: false,
-        interactive: false,
-      } as any,
-      interactive: false,
-    });
-    cityGlow.addTo(map);
-    cityGlowRef.current = cityGlow;
-
-    const cityOutline = L.geoJSON(cityBoundary as any, {
-      style: {
-        color: "#60a5fa",
-        weight: 3.6,
-        opacity: 1,
-        fill: false,
-        interactive: false,
-      } as any,
-      interactive: false,
-    });
-    cityOutline.addTo(map);
-    cityOutlineRef.current = cityOutline;
-
-    const brgyLayer = L.geoJSON(barangays as any, {
-      style: {
-        color: "#93c5fd",
-        weight: 1.5,
-        opacity: 0.8,
-        fillColor: "#bfdbfe",
-        fillOpacity: 0.035,
-        interactive: false,
-      } as any,
-      interactive: false,
-    });
-    brgyLayer.addTo(map);
-    barangaysLayerRef.current = brgyLayer;
-
-    mask.bringToBack();
-    cityGlow.bringToBack();
-    cityOutline.bringToBack();
-    brgyLayer.bringToBack();
-
-    return () => {
-      if (disposedRef.current) return;
-
-      if (maskLayerRef.current && map.hasLayer(maskLayerRef.current)) {
-        map.removeLayer(maskLayerRef.current);
-      }
-      if (cityGlowRef.current && map.hasLayer(cityGlowRef.current)) {
-        map.removeLayer(cityGlowRef.current);
-      }
-      if (cityOutlineRef.current && map.hasLayer(cityOutlineRef.current)) {
-        map.removeLayer(cityOutlineRef.current);
-      }
-      if (
-        barangaysLayerRef.current &&
-        map.hasLayer(barangaysLayerRef.current)
-      ) {
-        map.removeLayer(barangaysLayerRef.current);
-      }
-
-      maskLayerRef.current = null;
-      cityGlowRef.current = null;
-      cityOutlineRef.current = null;
-      barangaysLayerRef.current = null;
-    };
-  }, [cityBoundary, barangays]);
-
+  // keep barangay layer toggle in main because it is UI-driven
   useEffect(() => {
     const map = mapRef.current;
     const layer = barangaysLayerRef.current;
@@ -303,251 +101,7 @@ export default function LiveMapView() {
     } else {
       if (map.hasLayer(layer)) map.removeLayer(layer);
     }
-  }, [showBarangays]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || disposedRef.current) return;
-
-    if (highlightLayerRef.current && map.hasLayer(highlightLayerRef.current)) {
-      map.removeLayer(highlightLayerRef.current);
-      highlightLayerRef.current = null;
-    }
-
-    if (!selectedBarangay || !barangays) {
-      if (!selectedBarangay && cityBoundary) {
-        map.flyTo(MAP_CONFIG.defaultCenter, MAP_CONFIG.defaultZoom, {
-          duration: 0.9,
-        });
-      }
-      return;
-    }
-
-    const feat = barangays.features.find(
-      (f) => f.properties.name.toLowerCase() === selectedBarangay.toLowerCase(),
-    );
-    if (!feat) return;
-
-    const highlight = L.geoJSON(feat as any, {
-      style: {
-        color: "#f8fafc",
-        weight: 4,
-        opacity: 1,
-        fillColor: "#3b82f6",
-        fillOpacity: 0.16,
-        interactive: false,
-      } as any,
-      interactive: false,
-    });
-    highlight.addTo(map);
-    highlightLayerRef.current = highlight;
-
-    const bounds = highlight.getBounds();
-    if (bounds.isValid()) {
-      map.flyToBounds(bounds, { duration: 0.9, padding: [40, 40] });
-    }
-  }, [selectedBarangay, barangays, cityBoundary]);
-
-  // ── DATA FETCH ──────────────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      let incQ = supabase
-        .from("sos_incidents")
-        .select(
-          "id, barangay, flood_severity, status, people_count, message, location, created_at",
-        )
-        .in("status", ["pending", "assigned", "in_progress"])
-        .limit(200);
-
-      if (selectedBarangay) incQ = incQ.eq("barangay", selectedBarangay);
-
-      let evacQ = supabase
-        .from("evacuation_centers")
-        .select(
-          "id, name, barangay, capacity, current_occupancy, is_open, location",
-        );
-
-      if (selectedBarangay) evacQ = evacQ.eq("barangay", selectedBarangay);
-
-      const [incRes, respRes, evacRes, tripRes] = await Promise.all([
-        incQ,
-        supabase
-          .from("responders")
-          .select(
-            "id, team_name, vehicle_type, is_available, current_load, max_capacity, current_location, last_location_update",
-          ),
-        evacQ,
-        supabase
-          .from("trip_plans")
-          .select(
-            "id, responder_id, status, stops, route_geometry, route_distance_meters, route_duration_seconds",
-          )
-          .eq("status", "active"),
-      ]);
-
-      if (cancelled || disposedRef.current) return;
-
-      if (incRes.error)
-        console.error("[LiveMap] incidents error:", incRes.error);
-      if (respRes.error)
-        console.error("[LiveMap] responders error:", respRes.error);
-      if (evacRes.error) console.error("[LiveMap] evacs error:", evacRes.error);
-      if (tripRes.error) console.error("[LiveMap] trips error:", tripRes.error);
-
-      if (incRes.data) setIncidents(incRes.data as SOSIncident[]);
-
-      if (respRes.data) {
-        const responderIds = (respRes.data as any[])
-          .map((r) => r.id)
-          .filter(Boolean);
-
-        const barangayById = new Map<string, string>();
-
-        if (responderIds.length > 0) {
-          const respUsersRes = await supabase
-            .from("users")
-            .select("id, barangay")
-            .in("id", responderIds);
-
-          if (cancelled || disposedRef.current) return;
-
-          if (respUsersRes.error) {
-            console.warn("[LiveMap] users barangay error:", respUsersRes.error);
-          } else {
-            (respUsersRes.data ?? []).forEach((u: any) => {
-              if (u?.id && u?.barangay) barangayById.set(u.id, u.barangay);
-            });
-          }
-        }
-
-        const merged: Responder[] = (respRes.data as any[]).map((r) => ({
-          id: r.id,
-          team_name: r.team_name,
-          vehicle_type: r.vehicle_type,
-          is_available: r.is_available,
-          current_load: r.current_load,
-          max_capacity: r.max_capacity,
-          current_location: r.current_location,
-          last_location_update: r.last_location_update,
-          home_barangay: barangayById.get(r.id) ?? null,
-        }));
-
-        setResponders(merged);
-      }
-
-      if (evacRes.data) setEvacCenters(evacRes.data as EvacCenter[]);
-      if (tripRes.data) setActiveTrips(tripRes.data as TripPlan[]);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedBarangay]);
-
-  // ── REALTIME ────────────────────────────────────────────────
-  useEffect(() => {
-    const channelId = `livemap-${Date.now()}`;
-
-    const channel = supabase
-      .channel(channelId)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "sos_incidents" },
-        (payload) => {
-          if (disposedRef.current) return;
-
-          if (payload.eventType === "INSERT") {
-            const n = payload.new as SOSIncident;
-            if (!["pending", "assigned", "in_progress"].includes(n.status))
-              return;
-            if (selectedBarangay && n.barangay !== selectedBarangay) return;
-            setIncidents((prev) => [n, ...prev]);
-          } else if (payload.eventType === "UPDATE") {
-            const u = payload.new as SOSIncident;
-            if (["resolved", "false_alarm"].includes(u.status)) {
-              setIncidents((prev) => prev.filter((i) => i.id !== u.id));
-            } else if (selectedBarangay && u.barangay !== selectedBarangay) {
-              setIncidents((prev) => prev.filter((i) => i.id !== u.id));
-            } else {
-              setIncidents((prev) =>
-                prev.map((i) => (i.id === u.id ? { ...i, ...u } : i)),
-              );
-            }
-          } else if (payload.eventType === "DELETE") {
-            setIncidents((prev) =>
-              prev.filter((i) => i.id !== (payload.old as any).id),
-            );
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "responders" },
-        (payload) => {
-          if (disposedRef.current) return;
-          setResponders((prev) =>
-            prev.map((r) =>
-              r.id !== payload.new.id
-                ? r
-                : {
-                    ...r,
-                    ...(payload.new as any),
-                    home_barangay: r.home_barangay,
-                  },
-            ),
-          );
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "evacuation_centers" },
-        (payload) => {
-          if (disposedRef.current) return;
-          const u = payload.new as EvacCenter;
-          if (selectedBarangay && u.barangay !== selectedBarangay) return;
-          setEvacCenters((prev) =>
-            prev.map((e) => (e.id === u.id ? { ...e, ...u } : e)),
-          );
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "trip_plans" },
-        (payload) => {
-          if (disposedRef.current) return;
-
-          if (payload.eventType === "INSERT") {
-            const n = payload.new as TripPlan;
-            if (n.status === "active") {
-              setActiveTrips((prev) => [...prev, n]);
-            }
-          } else if (payload.eventType === "UPDATE") {
-            const u = payload.new as TripPlan;
-            if (u.status === "active") {
-              setActiveTrips((prev) => {
-                const has = prev.find((t) => t.id === u.id);
-                return has
-                  ? prev.map((t) => (t.id === u.id ? u : t))
-                  : [...prev, u];
-              });
-            } else {
-              setActiveTrips((prev) => prev.filter((t) => t.id !== u.id));
-            }
-          } else if (payload.eventType === "DELETE") {
-            setActiveTrips((prev) =>
-              prev.filter((t) => t.id !== (payload.old as any).id),
-            );
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [selectedBarangay]);
+  }, [showBarangays, mapRef, barangaysLayerRef, disposedRef]);
 
   // ── RENDER SOS MARKERS / HEATMAP ────────────────────────────
   useEffect(() => {
@@ -625,7 +179,17 @@ export default function LiveMapView() {
       cluster.addLayer(marker);
       sosMarkersRef.current.set(inc.id, marker);
     }
-  }, [incidents, showSOS, heatmapMode, sosStatusFilter]);
+  }, [
+    incidents,
+    showSOS,
+    heatmapMode,
+    sosStatusFilter,
+    mapRef,
+    sosClusterRef,
+    heatLayerRef,
+    sosMarkersRef,
+    disposedRef,
+  ]);
 
   // ── RENDER RESPONDER MARKERS ────────────────────────────────
   useEffect(() => {
@@ -648,7 +212,13 @@ export default function LiveMapView() {
       layer.addLayer(marker);
       responderMarkersRef.current.set(r.id, marker);
     }
-  }, [responders, showResponders]);
+  }, [
+    responders,
+    showResponders,
+    responderLayerRef,
+    responderMarkersRef,
+    disposedRef,
+  ]);
 
   // ── RENDER EVAC MARKERS ─────────────────────────────────────
   useEffect(() => {
@@ -671,7 +241,7 @@ export default function LiveMapView() {
       layer.addLayer(marker);
       evacMarkersRef.current.set(e.id, marker);
     }
-  }, [evacCenters, showEvacs]);
+  }, [evacCenters, showEvacs, evacLayerRef, evacMarkersRef, disposedRef]);
 
   // ── RENDER TRIP ROUTES ──────────────────────────────────────
   useEffect(() => {
@@ -726,7 +296,7 @@ export default function LiveMapView() {
 
       addStyledRouteToLayer(layer, path, color);
     }
-  }, [activeTrips, responders, showTrips]);
+  }, [activeTrips, responders, showTrips, routeLayerRef, disposedRef]);
 
   function focusLocation(
     coords: [number, number],
