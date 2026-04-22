@@ -12,7 +12,7 @@ export const MAP_CONFIG = {
 
   // --- DASMARIÑAS CITY CENTER ---
   defaultCenter: [14.3294, 120.9367] as [number, number],
-  defaultZoom: 13,
+  defaultZoom: 15,
   maxZoom: 18,
   minZoom: 11,
 

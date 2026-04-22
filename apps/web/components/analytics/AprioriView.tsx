@@ -3,13 +3,32 @@
 
 interface Props { data: unknown; }
 
-// Expected shape: { rules: [{ antecedent: "High Humidity, Cloudy", consequent: "Rain", support: 0.45, confidence: 0.82, lift: 1.5 }] }
 interface Rule {
+  antecedent?: string;
+  consequent?: string;
+  condition?: string;
+  result?: string;
+  support?: number;
+  confidence?: number;
+  lift?: number;
+}
+
+interface NormalizedRule {
   antecedent: string;
   consequent: string;
   support: number;
   confidence: number;
   lift: number;
+}
+
+function normalizeRule(rule: Rule): NormalizedRule {
+  return {
+    antecedent: rule.antecedent ?? rule.condition ?? "—",
+    consequent: rule.consequent ?? rule.result ?? "—",
+    support: typeof rule.support === "number" ? rule.support : 0,
+    confidence: typeof rule.confidence === "number" ? rule.confidence : 0,
+    lift: typeof rule.lift === "number" ? rule.lift : 0,
+  };
 }
 
 export function AprioriView({ data }: Props) {
@@ -18,7 +37,7 @@ export function AprioriView({ data }: Props) {
   }
 
   const parsed = data as { rules?: Rule[] };
-  const rules = parsed.rules || [];
+  const rules = (parsed.rules || []).map(normalizeRule);
 
   if (rules.length === 0) {
     return <div className="flex h-40 items-center justify-center text-xs text-gray-500">No association rules found.</div>;
@@ -39,28 +58,32 @@ export function AprioriView({ data }: Props) {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((rule, i) => (
-            <tr key={i} className="border-b border-gray-800/50">
-              <td className="py-2 pr-2 text-gray-300">{rule.antecedent}</td>
-              <td className="py-2 pr-2">
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                  rule.consequent.toLowerCase().includes("flood")
-                    ? "bg-red-500/10 text-red-400"
-                    : rule.consequent.toLowerCase().includes("rain")
-                    ? "bg-sky-500/10 text-sky-400"
-                    : "bg-gray-500/10 text-gray-400"
-                }`}>
-                  {rule.consequent}
-                </span>
-              </td>
-              <td className="py-2 pr-2 text-right font-mono text-gray-400">
-                {(rule.confidence * 100).toFixed(0)}%
-              </td>
-              <td className="py-2 text-right font-mono text-gray-400">
-                {rule.lift.toFixed(2)}
-              </td>
-            </tr>
-          ))}
+          {sorted.map((rule, i) => {
+            const consequentText = rule.consequent.toLowerCase();
+
+            return (
+              <tr key={i} className="border-b border-gray-800/50">
+                <td className="py-2 pr-2 text-gray-300">{rule.antecedent}</td>
+                <td className="py-2 pr-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    consequentText.includes("flood")
+                      ? "bg-red-500/10 text-red-400"
+                      : consequentText.includes("rain")
+                      ? "bg-sky-500/10 text-sky-400"
+                      : "bg-gray-500/10 text-gray-400"
+                  }`}>
+                    {rule.consequent}
+                  </span>
+                </td>
+                <td className="py-2 pr-2 text-right font-mono text-gray-400">
+                  {(rule.confidence * 100).toFixed(0)}%
+                </td>
+                <td className="py-2 text-right font-mono text-gray-400">
+                  {rule.lift.toFixed(2)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
