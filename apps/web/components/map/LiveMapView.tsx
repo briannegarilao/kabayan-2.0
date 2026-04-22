@@ -94,6 +94,33 @@ function matchesResponderBarangay(
   return responder.team_name?.toLowerCase().includes(target) ?? false;
 }
 
+// ── Visual helpers ───────────────────────────────────────────
+function addStyledRouteToLayer(
+  layer: L.LayerGroup,
+  latlngs: [number, number][],
+  color: string,
+) {
+  const routeBack = L.polyline(latlngs, {
+    color: "#020617",
+    weight: 9,
+    opacity: 0.8,
+    lineCap: "round",
+    lineJoin: "round",
+  });
+
+  const routeFront = L.polyline(latlngs, {
+    color,
+    weight: 5,
+    opacity: 0.95,
+    dashArray: "10, 10",
+    lineCap: "round",
+    lineJoin: "round",
+  });
+
+  layer.addLayer(routeBack);
+  layer.addLayer(routeFront);
+}
+
 // ── Icon factories ────────────────────────────────────────────
 function createSOSIcon(
   severity: string | null,
@@ -101,53 +128,114 @@ function createSOSIcon(
 ): L.DivIcon {
   const color =
     SEVERITY_COLORS[severity || "pending"] || SEVERITY_COLORS.pending;
+
+  const halo =
+    severity === "critical"
+      ? "0 0 0 5px rgba(239,68,68,0.22), 0 0 20px rgba(239,68,68,0.55)"
+      : severity === "high"
+        ? "0 0 0 4px rgba(249,115,22,0.18), 0 0 16px rgba(249,115,22,0.45)"
+        : severity === "moderate"
+          ? "0 0 0 4px rgba(245,158,11,0.16), 0 0 14px rgba(245,158,11,0.35)"
+          : "0 0 0 4px rgba(34,197,94,0.14), 0 0 12px rgba(34,197,94,0.25)";
+
   return L.divIcon({
     className: "",
-    html: `<div style="
-      width:22px;height:22px;background:${color};
-      border:2.5px solid white;border-radius:50%;
-      box-shadow:0 2px 8px rgba(0,0,0,0.6);
-      ${isCritical ? "animation:kabayan-pulse 1.5s infinite;" : ""}
-    "></div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 11],
+    html: `
+      <div style="
+        width:28px;
+        height:28px;
+        border-radius:50%;
+        background:${color};
+        border:3px solid #ffffff;
+        box-shadow:${halo};
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        ${isCritical ? "animation:kabayan-pulse 1.35s infinite;" : ""}
+      ">
+        <div style="
+          width:8px;
+          height:8px;
+          border-radius:50%;
+          background:white;
+        "></div>
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
 }
 
 function createResponderIcon(isAvailable: boolean): L.DivIcon {
   const color = isAvailable ? "#22c55e" : "#f59e0b";
+
   return L.divIcon({
     className: "",
-    html: `<div style="
-      width:24px;height:24px;background:${color};
-      border:3px solid white;border-radius:6px;
-      box-shadow:0 2px 8px rgba(0,0,0,0.6);
-      display:flex;align-items:center;justify-content:center;
-      font-size:11px;color:white;font-weight:700;
-    ">R</div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
+    html: `
+      <div style="
+        width:28px;
+        height:28px;
+        border-radius:8px;
+        background:${color};
+        border:3px solid #ffffff;
+        box-shadow:0 0 0 4px ${isAvailable ? "rgba(34,197,94,0.16)" : "rgba(245,158,11,0.16)"}, 0 4px 12px rgba(0,0,0,0.45);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        color:white;
+        font-weight:800;
+        font-size:12px;
+      ">R</div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
 }
 
 function createEvacIcon(isOpen: boolean): L.DivIcon {
   const color = isOpen ? "#0d9488" : "#475569";
-  const strokeColor = isOpen ? "#14b8a6" : "#64748b";
+  const glow = isOpen
+    ? "0 0 0 4px rgba(20,184,166,0.14), 0 4px 12px rgba(0,0,0,0.45)"
+    : "0 0 0 4px rgba(100,116,139,0.14), 0 4px 12px rgba(0,0,0,0.45)";
+
   return L.divIcon({
     className: "",
-    html: `<div style="
-      position:relative;width:26px;height:26px;background:${color};
-      border:2.5px solid ${strokeColor};border-radius:4px;
-      box-shadow:0 2px 8px rgba(0,0,0,0.55);
-      display:flex;align-items:center;justify-content:center;
-    ">
-      <div style="position:relative;width:14px;height:14px;">
-        <div style="position:absolute;left:5px;top:0;width:4px;height:14px;background:white;border-radius:1px;"></div>
-        <div style="position:absolute;left:0;top:5px;width:14px;height:4px;background:white;border-radius:1px;"></div>
+    html: `
+      <div style="
+        width:30px;
+        height:30px;
+        border-radius:8px;
+        background:${color};
+        border:3px solid #ffffff;
+        box-shadow:${glow};
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      ">
+        <div style="position:relative;width:14px;height:14px;">
+          <div style="
+            position:absolute;
+            left:5px;
+            top:0;
+            width:4px;
+            height:14px;
+            background:white;
+            border-radius:2px;
+          "></div>
+          <div style="
+            position:absolute;
+            left:0;
+            top:5px;
+            width:14px;
+            height:4px;
+            background:white;
+            border-radius:2px;
+          "></div>
+        </div>
       </div>
-    </div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
+    `,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
   });
 }
 
@@ -269,7 +357,6 @@ export default function LiveMapView() {
   const router = useRouter();
   const { selectedBarangay } = useBarangayFilter();
 
-  // Map / layer refs
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const sosClusterRef = useRef<L.MarkerClusterGroup | null>(null);
@@ -280,6 +367,7 @@ export default function LiveMapView() {
 
   const maskLayerRef = useRef<L.Polygon | null>(null);
   const cityOutlineRef = useRef<L.GeoJSON | null>(null);
+  const cityGlowRef = useRef<L.GeoJSON | null>(null);
   const barangaysLayerRef = useRef<L.GeoJSON | null>(null);
   const highlightLayerRef = useRef<L.GeoJSON | null>(null);
 
@@ -287,10 +375,8 @@ export default function LiveMapView() {
   const responderMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const evacMarkersRef = useRef<Map<string, L.Marker>>(new Map());
 
-  // Disposal guard
   const disposedRef = useRef(false);
 
-  // Data state
   const [incidents, setIncidents] = useState<SOSIncident[]>([]);
   const [responders, setResponders] = useState<Responder[]>([]);
   const [evacCenters, setEvacCenters] = useState<EvacCenter[]>([]);
@@ -359,7 +445,34 @@ export default function LiveMapView() {
       chunkInterval: 50,
       chunkDelay: 10,
       showCoverageOnHover: false,
+      iconCreateFunction(cluster) {
+        const count = cluster.getChildCount();
+        return L.divIcon({
+          className: "",
+          html: `
+            <div style="
+              width:40px;
+              height:40px;
+              border-radius:9999px;
+              background:#ef4444;
+              color:white;
+              border:3px solid #ffffff;
+              box-shadow:0 0 0 5px rgba(239,68,68,0.18), 0 8px 18px rgba(0,0,0,0.35);
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              font-weight:800;
+              font-size:13px;
+            ">
+              ${count}
+            </div>
+          `,
+          iconSize: [40, 40],
+          iconAnchor: [20, 20],
+        });
+      },
     });
+
     const responderLayer = L.layerGroup();
     const evacLayer = L.layerGroup();
     const routeLayer = L.layerGroup();
@@ -397,6 +510,7 @@ export default function LiveMapView() {
       heatLayerRef.current = null;
       maskLayerRef.current = null;
       cityOutlineRef.current = null;
+      cityGlowRef.current = null;
       barangaysLayerRef.current = null;
       highlightLayerRef.current = null;
       sosMarkersRef.current.clear();
@@ -422,18 +536,31 @@ export default function LiveMapView() {
     const mask = L.polygon([worldRing, dasmaRing], {
       color: "transparent",
       fillColor: "#020617",
-      fillOpacity: 0.55,
+      fillOpacity: 0.58,
       stroke: false,
       interactive: false,
     });
     mask.addTo(map);
     maskLayerRef.current = mask;
 
+    const cityGlow = L.geoJSON(cityBoundary as any, {
+      style: {
+        color: "#ffffff",
+        weight: 8,
+        opacity: 0.16,
+        fill: false,
+        interactive: false,
+      } as any,
+      interactive: false,
+    });
+    cityGlow.addTo(map);
+    cityGlowRef.current = cityGlow;
+
     const cityOutline = L.geoJSON(cityBoundary as any, {
       style: {
         color: "#60a5fa",
-        weight: 2.5,
-        opacity: 0.9,
+        weight: 3.6,
+        opacity: 1,
         fill: false,
         interactive: false,
       } as any,
@@ -444,11 +571,11 @@ export default function LiveMapView() {
 
     const brgyLayer = L.geoJSON(barangays as any, {
       style: {
-        color: "#64748b",
-        weight: 0.8,
-        opacity: 0.6,
-        fillColor: "#94a3b8",
-        fillOpacity: 0.0,
+        color: "#93c5fd",
+        weight: 1.5,
+        opacity: 0.8,
+        fillColor: "#bfdbfe",
+        fillOpacity: 0.035,
         interactive: false,
       } as any,
       interactive: false,
@@ -457,14 +584,17 @@ export default function LiveMapView() {
     barangaysLayerRef.current = brgyLayer;
 
     mask.bringToBack();
+    cityGlow.bringToBack();
     cityOutline.bringToBack();
     brgyLayer.bringToBack();
-    mask.bringToBack();
 
     return () => {
       if (disposedRef.current) return;
       if (maskLayerRef.current && map.hasLayer(maskLayerRef.current)) {
         map.removeLayer(maskLayerRef.current);
+      }
+      if (cityGlowRef.current && map.hasLayer(cityGlowRef.current)) {
+        map.removeLayer(cityGlowRef.current);
       }
       if (cityOutlineRef.current && map.hasLayer(cityOutlineRef.current)) {
         map.removeLayer(cityOutlineRef.current);
@@ -476,6 +606,7 @@ export default function LiveMapView() {
         map.removeLayer(barangaysLayerRef.current);
       }
       maskLayerRef.current = null;
+      cityGlowRef.current = null;
       cityOutlineRef.current = null;
       barangaysLayerRef.current = null;
     };
@@ -518,11 +649,11 @@ export default function LiveMapView() {
 
     const highlight = L.geoJSON(feat as any, {
       style: {
-        color: "#3b82f6",
-        weight: 3,
+        color: "#f8fafc",
+        weight: 4,
         opacity: 1,
         fillColor: "#3b82f6",
-        fillOpacity: 0.12,
+        fillOpacity: 0.16,
         interactive: false,
       } as any,
       interactive: false,
@@ -782,8 +913,8 @@ export default function LiveMapView() {
       if (pts.length > 0) {
         // @ts-ignore
         const layer = L.heatLayer(pts, {
-          radius: 30,
-          blur: 22,
+          radius: 34,
+          blur: 24,
           maxZoom: 17,
           gradient: {
             0.2: "#22c55e",
@@ -872,7 +1003,6 @@ export default function LiveMapView() {
     for (const trip of activeTrips) {
       const color = tripColor(trip.responder_id);
 
-      // Preferred: render stored OSRM road geometry
       const geometry = trip.route_geometry;
       if (
         geometry &&
@@ -891,18 +1021,11 @@ export default function LiveMapView() {
           .map(([lng, lat]) => [lat, lng] as [number, number]);
 
         if (latlngs.length >= 2) {
-          const polyline = L.polyline(latlngs, {
-            color,
-            weight: 4,
-            opacity: 0.85,
-            dashArray: "8, 8",
-          });
-          layer.addLayer(polyline);
+          addStyledRouteToLayer(layer, latlngs, color);
           continue;
         }
       }
 
-      // Fallback: old straight-line rendering
       const responder = responders.find((r) => r.id === trip.responder_id);
       const responderCoords = responder
         ? parseLocation(responder.current_location)
@@ -920,13 +1043,7 @@ export default function LiveMapView() {
 
       if (path.length < 2) continue;
 
-      const polyline = L.polyline(path, {
-        color,
-        weight: 4,
-        opacity: 0.75,
-        dashArray: "8, 8",
-      });
-      layer.addLayer(polyline);
+      addStyledRouteToLayer(layer, path, color);
     }
   }, [activeTrips, responders, showTrips]);
 
@@ -1278,8 +1395,8 @@ export default function LiveMapView() {
             opacity: 1;
           }
           50% {
-            transform: scale(1.25);
-            opacity: 0.75;
+            transform: scale(1.2);
+            opacity: 0.82;
           }
         }
       `}</style>
