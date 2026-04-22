@@ -7,7 +7,7 @@ export const BARANGAY_FILTER_STORAGE_KEY = "kabayan.barangayFilter";
 
 export type FloodSeverity = "low" | "moderate" | "high" | "critical";
 export type SalitranRunMode = "setup_only" | "setup_and_trigger";
-export type SalitranSpeedPreset = "normal" | "fast";
+export type SalitranSpeedPreset = "1x" | "2x" | "4x";
 export type SalitranSimulationStatus =
   | "armed"
   | "prepared"
@@ -258,7 +258,7 @@ export function startSalitranSimulationSession(
     notes?: string[];
     status?: SalitranSimulationStatus;
   },
-) {
+): void {
   if (typeof window === "undefined") return;
 
   const session: SalitranSimSession = {
@@ -268,7 +268,7 @@ export function startSalitranSimulationSession(
     scenarioTitle: scenario.title,
     startedAt: new Date().toISOString(),
     runMode: options?.runMode,
-    speedPreset: options?.speedPreset ?? "normal",
+    speedPreset: options?.speedPreset ?? "1x",
     seededIncidentIds: options?.seededIncidentIds ?? [],
     stagedResponderIds: options?.stagedResponderIds ?? [],
     openedEvacNames: options?.openedEvacNames ?? [],
@@ -394,4 +394,8 @@ export function validateScenariosAgainstPolygon(
     passed: all.filter((item) => item.inside).length,
     failed: all.filter((item) => !item.inside),
   };
+}
+
+export function getSalitranScenarioById(id: string) {
+  return SALITRAN_SCENARIOS.find((scenario) => scenario.id === id) ?? null;
 }

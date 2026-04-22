@@ -2,11 +2,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   PauseCircle,
   PlayCircle,
   SkipForward,
   RefreshCw,
+  RotateCcw,
   Rocket,
   Truck,
   MapPinned,
@@ -33,14 +35,17 @@ type SimIncident = {
   is_simulated?: boolean;
 };
 
+const SPEED_OPTIONS: SalitranSpeedPreset[] = ["1x", "2x", "4x"];
+
 export function SalitranSimulationControls() {
+  const router = useRouter();
   const [session, setSession] = useState<SalitranSimSession | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [activeTripCount, setActiveTripCount] = useState(0);
   const [activeIncidentCount, setActiveIncidentCount] = useState(0);
   const [lastAction, setLastAction] = useState<string>("idle");
   const [statusText, setStatusText] = useState<string>("No active simulation.");
-  const [speedPreset, setSpeedPreset] = useState<SalitranSpeedPreset>("normal");
+  const [speedPreset, setSpeedPreset] = useState<SalitranSpeedPreset>("1x");
 
   useEffect(() => {
     const sync = () => {
@@ -93,9 +98,11 @@ export function SalitranSimulationControls() {
   useEffect(() => {
     if (!session) return;
     void refreshState();
+
     const interval = window.setInterval(() => {
       void refreshState();
     }, 2000);
+
     return () => window.clearInterval(interval);
   }, [session, targetSimulationLabel]);
 
@@ -111,78 +118,81 @@ export function SalitranSimulationControls() {
 
   const isRunning = session.status === "running";
   const isComplete = session.status === "complete";
+  const isPaused = session.status === "paused";
+  const isBlocked = session.status === "blocked";
+
+  function handleStartOrResume() {
+    updateSalitranSimulationSession({ status: "running", speedPreset });
+    setStatusText(
+      "Playback running. Movement is client-side and DB writes happen only at checkpoints.",
+    );
+    appendClientSimulationFeed({
+      level: "INFO",
+      event: isPaused ? "playback_resumed" : "playback_started",
+      title: isPaused ? "Playback Resumed" : "Playback Started",
+      message:
+        "Client-side theater playback is active. Backend changes are checkpoint-based.",
+    });
+  }
+
+  function handlePause() {
+    updateSalitranSimulationSession({ status: "paused", speedPreset });
+    setStatusText("Playback paused.");
+    appendClientSimulationFeed({
+      level: "INFO",
+      event: "playback_paused",
+      title: "Playback Paused",
+      message: "Client-side movement has been paused.",
+    });
+  }
 
   return (
     <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 px-4 py-3">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-violet-200">
-            Salitran IV Simulation Controls
+            Salitran IV Playback Controls
           </p>
           <p className="text-xs text-violet-100/75">
-            {session.scenarioTitle} · smooth client-side playback
+            {session.scenarioTitle} · polished demo theater mode
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={speedPreset}
-            onChange={(e) => {
-              const next = e.target.value as SalitranSpeedPreset;
-              setSpeedPreset(next);
-              updateSalitranSimulationSession({ speedPreset: next });
-
-              appendClientSimulationFeed({
-                level: "INFO",
-                event: "speed_changed",
-                title: "Playback Speed Updated",
-                message: `Simulation speed set to ${next}.`,
-              });
-            }}
-            className="rounded-lg border border-violet-400/20 bg-violet-950/40 px-3 py-2 text-xs font-medium text-violet-200 outline-none"
-          >
-            <option value="normal">Normal speed</option>
-            <option value="fast">Fast speed</option>
-          </select>
+          {SPEED_OPTIONS.map((option) => (
+            <button
+              key={option}
+              onClick={() => {
+                setSpeedPreset(option);
+                updateSalitranSimulationSession({ speedPreset: option });
+                appendClientSimulationFeed({
+                  level: "INFO",
+                  event: "speed_changed",
+                  title: "Playback Speed Updated",
+                  message: `Simulation speed set to ${option}.`,
+                });
+              }}
+              className={`rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                speedPreset === option
+                  ? "bg-violet-600 text-white"
+                  : "border border-violet-400/20 bg-violet-950/40 text-violet-200 hover:bg-violet-900/50"
+              }`}
+            >
+              {option}
+            </button>
+          ))}
 
           <button
-            onClick={() => {
-              updateSalitranSimulationSession({
-                status: "running",
-                speedPreset,
-              });
-              setStatusText(
-                "Client-side playback running. Backend writes happen only at checkpoints.",
-              );
-              appendClientSimulationFeed({
-                level: "INFO",
-                event: "playback_started",
-                title: "Playback Started",
-                message:
-                  "Client-side movement started. DB writes are checkpoint-based only.",
-              });
-            }}
-            disabled={isBusy || isRunning || isComplete}
+            onClick={handleStartOrResume}
+            disabled={isBusy || isRunning || isComplete || isBlocked}
             className="inline-flex items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-950/40 px-3 py-2 text-xs font-medium text-violet-200 transition-colors hover:bg-violet-900/50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <PlayCircle className="h-4 w-4" />
-            Auto play
+            {isPaused ? "Resume" : "Start"}
           </button>
 
           <button
-            onClick={() => {
-              updateSalitranSimulationSession({
-                status: "paused",
-                speedPreset,
-              });
-              setStatusText("Playback paused.");
-              appendClientSimulationFeed({
-                level: "INFO",
-                event: "playback_paused",
-                title: "Playback Paused",
-                message: "Client-side movement has been paused.",
-              });
-            }}
+            onClick={handlePause}
             disabled={!isRunning}
             className="inline-flex items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-950/40 px-3 py-2 text-xs font-medium text-violet-200 transition-colors hover:bg-violet-900/50 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -230,6 +240,14 @@ export function SalitranSimulationControls() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </button>
+
+          <button
+            onClick={() => router.push("/dashboard/salitran-iv-sim")}
+            className="inline-flex items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-950/40 px-3 py-2 text-xs font-medium text-violet-200 transition-colors hover:bg-violet-900/50"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Rerun
+          </button>
         </div>
       </div>
 
@@ -263,9 +281,7 @@ export function SalitranSimulationControls() {
               Speed
             </span>
           </div>
-          <p className="text-sm font-semibold text-white capitalize">
-            {speedPreset}
-          </p>
+          <p className="text-sm font-semibold text-white">{speedPreset}</p>
         </div>
 
         <div className="rounded-xl border border-gray-800 bg-gray-950/50 p-3">
@@ -284,18 +300,6 @@ export function SalitranSimulationControls() {
       <div className="mt-3 rounded-xl border border-gray-800 bg-gray-950/50 px-3 py-2">
         <p className="text-xs text-gray-300">{statusText}</p>
       </div>
-
-      {isComplete && (
-        <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-3">
-          <p className="text-sm font-semibold text-emerald-200">
-            Scenario complete
-          </p>
-          <p className="mt-1 text-xs text-emerald-100/80">
-            The trip finished using smooth client-side playback with checkpoint
-            commits.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

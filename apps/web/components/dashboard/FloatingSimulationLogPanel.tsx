@@ -51,6 +51,8 @@ type UnifiedLog = {
   metadata?: Record<string, any>;
 };
 
+type FeedFilter = "all" | "motion" | "engine" | "system";
+
 function getLogVisual(log: UnifiedLog) {
   if (log.level === "ERROR") {
     return {
@@ -147,6 +149,7 @@ export function FloatingSimulationLogPanel() {
   const [clientLogs, setClientLogs] = useState<ClientSimFeedEntry[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [filter, setFilter] = useState<FeedFilter>("all");
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -229,6 +232,24 @@ export function FloatingSimulationLogPanel() {
     );
   }, [devLogs, clientLogs, session]);
 
+  const filteredLogs = useMemo(() => {
+    if (filter === "all") return mergedLogs;
+    if (filter === "motion") {
+      return mergedLogs.filter(
+        (log) =>
+          log.event.includes("movement") ||
+          log.event.includes("pickup") ||
+          log.event.includes("dropoff"),
+      );
+    }
+    if (filter === "engine") {
+      return mergedLogs.filter((log) => log.source === "ENGINE");
+    }
+    return mergedLogs.filter(
+      (log) => log.source === "DEV" || log.source === "CLIENT_SIM",
+    );
+  }, [mergedLogs, filter]);
+
   useEffect(() => {
     if (!scrollRef.current || collapsed) return;
 
@@ -238,7 +259,7 @@ export function FloatingSimulationLogPanel() {
     if (distanceFromBottom < 80) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [mergedLogs, collapsed]);
+  }, [filteredLogs, collapsed]);
 
   if (!session) return null;
 
@@ -256,8 +277,22 @@ export function FloatingSimulationLogPanel() {
     );
   }
 
+  const filterButton = (key: FeedFilter, label: string) => (
+    <button
+      key={key}
+      onClick={() => setFilter(key)}
+      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors ${
+        filter === key
+          ? "bg-violet-600 text-white"
+          : "border border-gray-800 bg-gray-950/70 text-gray-300 hover:bg-gray-800"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="absolute right-4 top-4 bottom-4 z-[1200] hidden w-[360px] xl:flex">
+    <div className="absolute right-4 top-4 bottom-4 z-[1200] hidden w-[380px] xl:flex">
       <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-violet-500/20 bg-gray-900/96 shadow-2xl backdrop-blur">
         <div className="border-b border-gray-800 px-4 py-3">
           <div className="mb-2 flex items-center justify-between gap-3">
@@ -279,11 +314,11 @@ export function FloatingSimulationLogPanel() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-2">
-              <p className="text-gray-500">Entries</p>
+              <p className="text-gray-500">Filtered entries</p>
               <p className="mt-1 font-semibold text-white">
-                {mergedLogs.length}
+                {filteredLogs.length}
               </p>
             </div>
             <div className="rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-2">
@@ -297,6 +332,13 @@ export function FloatingSimulationLogPanel() {
               </p>
             </div>
           </div>
+
+          <div className="flex flex-wrap gap-2">
+            {filterButton("all", "All")}
+            {filterButton("motion", "Motion")}
+            {filterButton("engine", "Engine")}
+            {filterButton("system", "System")}
+          </div>
         </div>
 
         <div
@@ -307,12 +349,12 @@ export function FloatingSimulationLogPanel() {
             <div className="rounded-xl border border-gray-800 bg-gray-950/60 px-4 py-3 text-sm text-gray-400">
               Loading simulation logs...
             </div>
-          ) : mergedLogs.length === 0 ? (
+          ) : filteredLogs.length === 0 ? (
             <div className="rounded-xl border border-gray-800 bg-gray-950/60 px-4 py-3 text-sm text-gray-400">
               No simulation log entries yet.
             </div>
           ) : (
-            mergedLogs.map((log, index) => {
+            filteredLogs.map((log, index) => {
               const visual = getLogVisual(log);
               const Icon = visual.icon;
 

@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { parseLocation } from "../../../lib/types";
 import {
   readSalitranSimulationSession,
   updateSalitranSimulationSession,
@@ -35,6 +34,9 @@ interface MotionState {
 }
 
 const SPEED_BY_PRESET: Record<string, number> = {
+  "1x": 14,
+  "2x": 24,
+  "4x": 42,
   normal: 14,
   fast: 24,
 };
@@ -307,7 +309,8 @@ export function useSalitranSimulationPlayback(params: {
     const interval = window.setInterval(() => {
       if (cancelled) return;
 
-      const speedMps = SPEED_BY_PRESET[session.speedPreset ?? "normal"] ?? 14;
+      const speedMps =
+        SPEED_BY_PRESET[session.speedPreset ?? "1x"] ?? SPEED_BY_PRESET["1x"];
       const now = Date.now();
 
       for (const motion of motionRef.current.values()) {

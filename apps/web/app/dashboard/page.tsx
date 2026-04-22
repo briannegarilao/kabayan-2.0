@@ -7,6 +7,8 @@ import { FloatingSimulationLogPanel } from "../../components/dashboard/FloatingS
 import { SimulationModeBanner } from "../../components/dashboard/SimulationModeBanner";
 import { SalitranSimulationControls } from "../../components/dashboard/SalitranSimulationControls";
 import { SalitranSimulationModeSync } from "../../components/dashboard/SalitranSimulationModeSync";
+import { SalitranSimulationStatusHud } from "../../components/dashboard/SalitranSimulationStatusHud";
+import { SalitranSimulationSummaryCard } from "../../components/dashboard/SalitranSimulationSummaryCard";
 
 const LiveMapView = dynamic(() => import("../../components/map/LiveMapView"), {
   ssr: false,
@@ -26,6 +28,7 @@ export default function DashboardPage() {
       <SalitranSimulationModeSync />
       <SimulationModeBanner />
       <SalitranSimulationControls />
+      <SalitranSimulationSummaryCard />
       <CompactDashboardStats />
 
       <div className="relative overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
@@ -33,6 +36,7 @@ export default function DashboardPage() {
           <LiveMapView />
         </div>
 
+        <SalitranSimulationStatusHud />
         <FloatingSimulationLogPanel />
       </div>
     </div>
