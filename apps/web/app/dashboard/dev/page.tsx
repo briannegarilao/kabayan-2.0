@@ -1,13 +1,14 @@
 // apps/web/app/dashboard/dev/page.tsx
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 import { createClient } from "../../../lib/supabase/client";
 import { isDevConsoleEnabledForClient } from "../../../lib/dev-console";
 import {
   getDevHealth,
+  getDevLogs,
   getDevStats,
   postDevReset,
   postSeedSOS,
@@ -18,6 +19,11 @@ import { BackendStatusPanel } from "../../../components/dev/BackendStatusPanel";
 import { StatsPanel } from "../../../components/dev/StatsPanel";
 import { SimulationPanel } from "../../../components/dev/SimulationPanel";
 import { DatabaseControlPanel } from "../../../components/dev/DatabaseControlPanel";
+import {
+  DevUILog,
+  LogFilter,
+  LogPanel,
+} from "../../../components/dev/LogPanel";
 
 const supabase = createClient();
 
@@ -30,6 +36,125 @@ interface EvacSummary {
 interface ResultBannerState {
   type: "ok" | "err";
   msg: string;
+}
+
+function makeLogId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildBackendLogId(raw: any, index: number) {
+  const trace = raw?.metadata?.run_id || raw?.metadata?.trace_id || "no-trace";
+  const incident =
+    raw?.metadata?.incident_id ||
+    raw?.metadata?.primary_incident_id ||
+    raw?.metadata?.seeded_from_incident_id ||
+    "no-incident";
+  const responder = raw?.metadata?.responder_id || "no-responder";
+  const trip = raw?.metadata?.trip_id || "no-trip";
+  const timestamp = raw?.timestamp ?? "no-ts";
+  const source = raw?.source ?? "DEV";
+  const event = raw?.event ?? "unknown";
+
+  return [
+    source,
+    event,
+    timestamp,
+    trace,
+    incident,
+    responder,
+    trip,
+    index,
+  ].join("__");
+}
+
+function normalizeBackendLog(raw: any, index: number): DevUILog {
+  return {
+    id: buildBackendLogId(raw, index),
+    timestamp: raw?.timestamp ?? new Date().toISOString(),
+    source: raw?.source ?? "DEV",
+    level: raw?.level ?? "INFO",
+    event: raw?.event ?? "unknown",
+    message: raw?.message ?? "",
+    metadata: raw?.metadata ?? {},
+  };
+}
+
+function formatRealtimeMessage(table: string, eventType: string, payload: any) {
+  const next = payload?.new ?? {};
+  const old = payload?.old ?? {};
+
+  if (table === "sos_incidents") {
+    const status = next.status ?? old.status ?? "unknown";
+    return {
+      event: "realtime_sos",
+      message: `[REALTIME] sos_incidents ${eventType} → status=${status}`,
+      metadata: {
+        table,
+        eventType,
+        id: next.id ?? old.id,
+        status,
+        barangay: next.barangay ?? old.barangay,
+        is_simulated: next.is_simulated ?? old.is_simulated,
+      },
+    };
+  }
+
+  if (table === "trip_plans") {
+    const status = next.status ?? old.status ?? "unknown";
+    return {
+      event: "realtime_trip",
+      message: `[REALTIME] trip_plans ${eventType} → status=${status}`,
+      metadata: {
+        table,
+        eventType,
+        id: next.id ?? old.id,
+        responder_id: next.responder_id ?? old.responder_id,
+        status,
+        is_simulated: next.is_simulated ?? old.is_simulated,
+      },
+    };
+  }
+
+  if (table === "responders") {
+    return {
+      event: "realtime_responder",
+      message: `[REALTIME] responders ${eventType} → is_available=${String(
+        next.is_available ?? old.is_available,
+      )}`,
+      metadata: {
+        table,
+        eventType,
+        id: next.id ?? old.id,
+        is_available: next.is_available ?? old.is_available,
+        current_incident_id:
+          next.current_incident_id ?? old.current_incident_id,
+        current_load: next.current_load ?? old.current_load,
+      },
+    };
+  }
+
+  if (table === "evacuation_centers") {
+    return {
+      event: "realtime_evac",
+      message: `[REALTIME] evacuation_centers ${eventType} → is_open=${String(
+        next.is_open ?? old.is_open,
+      )}`,
+      metadata: {
+        table,
+        eventType,
+        id: next.id ?? old.id,
+        name: next.name ?? old.name,
+        is_open: next.is_open ?? old.is_open,
+        current_occupancy: next.current_occupancy ?? old.current_occupancy,
+      },
+    };
+  }
+
+  return {
+    event: "realtime_generic",
+    message: `[REALTIME] ${table} ${eventType}`,
+    metadata: { table, eventType },
+  };
 }
 
 export default function DevConsolePage() {
@@ -46,6 +171,11 @@ export default function DevConsolePage() {
   const [health, setHealth] = useState<any | null>(null);
   const [stats, setStats] = useState<any | null>(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
+
+  const [backendLogs, setBackendLogs] = useState<DevUILog[]>([]);
+  const [realtimeLogs, setRealtimeLogs] = useState<DevUILog[]>([]);
+  const [paused, setPaused] = useState(false);
+  const [logFilter, setLogFilter] = useState<LogFilter>("ALL");
 
   useEffect(() => {
     let mounted = true;
@@ -111,12 +241,98 @@ export default function DevConsolePage() {
     }
   }, []);
 
+  const fetchBackendLogs = useCallback(async () => {
+    try {
+      const logRes = await getDevLogs({ n: 200 });
+      const normalized = (logRes?.logs ?? []).map((item: any, index: number) =>
+        normalizeBackendLog(item, index),
+      );
+      setBackendLogs(normalized);
+    } catch (error: any) {
+      setResult({
+        type: "err",
+        msg: `Log polling failed: ${error.message}`,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (allowed) {
       refreshEvacSummary();
       refreshBackend();
+      fetchBackendLogs();
     }
-  }, [allowed, refreshBackend, refreshEvacSummary]);
+  }, [allowed, refreshBackend, refreshEvacSummary, fetchBackendLogs]);
+
+  useEffect(() => {
+    if (!allowed || paused) return;
+
+    const interval = setInterval(() => {
+      fetchBackendLogs();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [allowed, paused, fetchBackendLogs]);
+
+  useEffect(() => {
+    if (!allowed) return;
+
+    const interval = setInterval(() => {
+      refreshBackend();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [allowed, refreshBackend]);
+
+  useEffect(() => {
+    if (!allowed) return;
+
+    function pushRealtimeLog(table: string, eventType: string, payload: any) {
+      const formatted = formatRealtimeMessage(table, eventType, payload);
+
+      const entry: DevUILog = {
+        id: makeLogId(`realtime_${table}`),
+        timestamp: new Date().toISOString(),
+        source: "REALTIME",
+        level: "INFO",
+        event: formatted.event,
+        message: formatted.message,
+        metadata: formatted.metadata,
+      };
+
+      setRealtimeLogs((prev) => [...prev, entry].slice(-200));
+    }
+
+    const channel = supabase
+      .channel("dev-console-monitoring")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sos_incidents" },
+        (payload) =>
+          pushRealtimeLog("sos_incidents", payload.eventType, payload),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "trip_plans" },
+        (payload) => pushRealtimeLog("trip_plans", payload.eventType, payload),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "responders" },
+        (payload) => pushRealtimeLog("responders", payload.eventType, payload),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "evacuation_centers" },
+        (payload) =>
+          pushRealtimeLog("evacuation_centers", payload.eventType, payload),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [allowed]);
 
   async function bulkOpenAllEvacs() {
     if (
@@ -227,13 +443,11 @@ export default function DevConsolePage() {
 
     try {
       const res = await postDevReset("soft");
-      setResult({
-        type: "ok",
-        msg: `Soft reset complete.`,
-      });
+      setResult({ type: "ok", msg: "Soft reset complete." });
       console.log("Soft reset result:", res);
       await refreshBackend();
       await refreshEvacSummary();
+      await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Soft reset failed: ${error.message}` });
     } finally {
@@ -255,13 +469,11 @@ export default function DevConsolePage() {
 
     try {
       const res = await postDevReset("full");
-      setResult({
-        type: "ok",
-        msg: `Full reset complete.`,
-      });
+      setResult({ type: "ok", msg: "Full reset complete." });
       console.log("Full reset result:", res);
       await refreshBackend();
       await refreshEvacSummary();
+      await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Full reset failed: ${error.message}` });
     } finally {
@@ -280,19 +492,20 @@ export default function DevConsolePage() {
         people_count: 3,
         vulnerability_flags: ["children"],
         message: "[SIM] Single SOS seeded from Dev Console",
-        simulation_label: "part5-single-seed",
+        simulation_label: "part6-single-seed",
         cluster: false,
         run_engine_after_seed: true,
       });
 
       setResult({
         type: "ok",
-        msg: `Seeded 1 simulated SOS and triggered the assignment engine.`,
+        msg: "Seeded 1 simulated SOS and triggered the assignment engine.",
       });
 
       console.log("Seed single result:", res);
       await refreshBackend();
       await refreshEvacSummary();
+      await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Seed single failed: ${error.message}` });
     } finally {
@@ -311,24 +524,37 @@ export default function DevConsolePage() {
         people_count: 2,
         vulnerability_flags: [],
         message: "[SIM] Clustered SOS seeded from Dev Console",
-        simulation_label: "part5-cluster-seed",
+        simulation_label: "part6-cluster-seed",
         cluster: true,
         run_engine_after_seed: true,
       });
 
       setResult({
         type: "ok",
-        msg: `Seeded 3 clustered simulated SOS incidents.`,
+        msg: "Seeded 3 clustered simulated SOS incidents.",
       });
 
       console.log("Seed cluster result:", res);
       await refreshBackend();
       await refreshEvacSummary();
+      await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Seed cluster failed: ${error.message}` });
     } finally {
       setBusy(null);
     }
+  }
+
+  const combinedLogs = useMemo(() => {
+    return [...backendLogs, ...realtimeLogs].sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
+  }, [backendLogs, realtimeLogs]);
+
+  function clearLocalLogs() {
+    setRealtimeLogs([]);
+    setBackendLogs([]);
   }
 
   if (allowed === null) {
@@ -401,17 +627,14 @@ export default function DevConsolePage() {
 
           <StatsPanel stats={stats} />
 
-          <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 p-5">
-            <h3 className="text-sm font-medium text-gray-400">
-              Coming in Part 6
-            </h3>
-            <ul className="mt-2 space-y-1 text-xs text-gray-600">
-              <li>• Live backend log stream from /api/dev/logs</li>
-              <li>• Realtime database event stream</li>
-              <li>• Current active incident / trip snapshot</li>
-              <li>• Source filters and auto-scroll log console</li>
-            </ul>
-          </div>
+          <LogPanel
+            logs={combinedLogs}
+            filter={logFilter}
+            setFilter={setLogFilter}
+            paused={paused}
+            onTogglePaused={() => setPaused((prev) => !prev)}
+            onClearLocal={clearLocalLogs}
+          />
         </>
       }
     />

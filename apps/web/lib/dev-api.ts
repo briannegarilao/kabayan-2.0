@@ -36,6 +36,23 @@ export async function getDevStats() {
   return parseJsonOrThrow(response);
 }
 
+export async function getDevLogs(params?: { n?: number; source?: string }) {
+  const search = new URLSearchParams();
+
+  if (params?.n) search.set("n", String(params.n));
+  if (params?.source) search.set("source", params.source);
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/dev/logs${search.toString() ? `?${search.toString()}` : ""}`,
+    {
+      method: "GET",
+      cache: "no-store",
+    },
+  );
+
+  return parseJsonOrThrow(response);
+}
+
 export async function postDevReset(mode: "soft" | "full") {
   const response = await fetch(`${API_BASE_URL}/api/dev/reset`, {
     method: "POST",
