@@ -23,6 +23,24 @@ interface ResponderRow {
   home_barangay: string | null;
 }
 
+function normalizeBarangay(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? null;
+}
+
+function matchesResponderBarangay(
+  responder: Pick<ResponderRow, "home_barangay" | "team_name">,
+  selectedBarangay: string,
+) {
+  const target = normalizeBarangay(selectedBarangay);
+  if (!target) return true;
+
+  if (normalizeBarangay(responder.home_barangay) === target) {
+    return true;
+  }
+
+  return responder.team_name?.toLowerCase().includes(target) ?? false;
+}
+
 function RespondersPageInner() {
   const { selectedBarangay } = useBarangayFilter();
   const searchParams = useSearchParams();
@@ -41,23 +59,13 @@ function RespondersPageInner() {
       setIsLoading(true);
       setFetchError(null);
 
-      // TWO-QUERY APPROACH:
-      // 1. Fetch ALL responders from public.responders (no join)
-      // 2. Fetch ALL users with role='responder' from public.users (for barangay)
-      // 3. Merge client-side by id — bulletproof against FK / schema cache issues
-      const [respRes, userRes] = await Promise.all([
-        supabase
-          .from("responders")
-          .select(`
-            id, is_available, current_location, current_incident_id,
-            last_location_update, vehicle_type, team_name, max_capacity, current_load
-          `)
-          .order("is_available", { ascending: false }),
-        supabase
-          .from("users")
-          .select("id, barangay")
-          .eq("role", "responder"),
-      ]);
+      const respRes = await supabase
+        .from("responders")
+        .select(`
+          id, is_available, current_location, current_incident_id,
+          last_location_update, vehicle_type, team_name, max_capacity, current_load
+        `)
+        .order("is_available", { ascending: false });
 
       if (cancelled) return;
 
@@ -67,14 +75,27 @@ function RespondersPageInner() {
         setIsLoading(false);
         return;
       }
-      if (userRes.error) {
-        console.warn("[Responders] Failed to fetch users barangays:", userRes.error);
-        // Not fatal — we can still show responders without barangay info
+
+      const responderIds = (respRes.data ?? []).map((r: any) => r.id).filter(Boolean);
+      let userBarangays: Array<{ id: string; barangay: string | null }> = [];
+
+      if (responderIds.length > 0) {
+        const userRes = await supabase
+          .from("users")
+          .select("id, barangay")
+          .in("id", responderIds);
+
+        if (cancelled) return;
+
+        if (userRes.error) {
+          console.warn("[Responders] Failed to fetch users barangays:", userRes.error);
+        } else {
+          userBarangays = userRes.data ?? [];
+        }
       }
 
-      // Build a quick lookup map for barangay by user id
       const barangayById = new Map<string, string>();
-      (userRes.data ?? []).forEach((u: any) => {
+      userBarangays.forEach((u) => {
         if (u?.id && u?.barangay) barangayById.set(u.id, u.barangay);
       });
 
@@ -93,7 +114,9 @@ function RespondersPageInner() {
 
       // Apply barangay filter on merged data
       if (selectedBarangay) {
-        merged = merged.filter((r) => r.home_barangay === selectedBarangay);
+        merged = merged.filter(
+          (r) => matchesResponderBarangay(r, selectedBarangay),
+        );
       }
 
       setResponders(merged);

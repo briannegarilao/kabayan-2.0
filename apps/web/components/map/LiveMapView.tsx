@@ -66,6 +66,24 @@ interface TripPlan {
 }
 type TabId = "sos" | "responders" | "evacs";
 
+function normalizeBarangay(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? null;
+}
+
+function matchesResponderBarangay(
+  responder: Pick<Responder, "home_barangay" | "team_name">,
+  selectedBarangay: string,
+) {
+  const target = normalizeBarangay(selectedBarangay);
+  if (!target) return true;
+
+  if (normalizeBarangay(responder.home_barangay) === target) {
+    return true;
+  }
+
+  return responder.team_name?.toLowerCase().includes(target) ?? false;
+}
+
 // ── Icon factories ────────────────────────────────────────────
 function createSOSIcon(severity: string | null, isCritical: boolean): L.DivIcon {
   const color = SEVERITY_COLORS[severity || "pending"] || SEVERITY_COLORS.pending;
@@ -463,12 +481,11 @@ export default function LiveMapView() {
         .select("id, name, barangay, capacity, current_occupancy, is_open, location");
       if (selectedBarangay) evacQ = evacQ.eq("barangay", selectedBarangay);
 
-      const [incRes, respRes, respUsersRes, evacRes, tripRes] = await Promise.all([
+      const [incRes, respRes, evacRes, tripRes] = await Promise.all([
         incQ,
         supabase
           .from("responders")
           .select("id, team_name, vehicle_type, is_available, current_load, max_capacity, current_location, last_location_update"),
-        supabase.from("users").select("id, barangay").eq("role", "responder"),
         evacQ,
         supabase.from("trip_plans").select("id, responder_id, status, stops").eq("status", "active"),
       ]);
@@ -477,17 +494,31 @@ export default function LiveMapView() {
 
       if (incRes.error) console.error("[LiveMap] incidents error:", incRes.error);
       if (respRes.error) console.error("[LiveMap] responders error:", respRes.error);
-      if (respUsersRes.error) console.warn("[LiveMap] users barangay error:", respUsersRes.error);
       if (evacRes.error) console.error("[LiveMap] evacs error:", evacRes.error);
       if (tripRes.error) console.error("[LiveMap] trips error:", tripRes.error);
 
       if (incRes.data) setIncidents(incRes.data as SOSIncident[]);
 
       if (respRes.data) {
+        const responderIds = (respRes.data as any[]).map((r) => r.id).filter(Boolean);
         const barangayById = new Map<string, string>();
-        (respUsersRes.data ?? []).forEach((u: any) => {
-          if (u?.id && u?.barangay) barangayById.set(u.id, u.barangay);
-        });
+
+        if (responderIds.length > 0) {
+          const respUsersRes = await supabase
+            .from("users")
+            .select("id, barangay")
+            .in("id", responderIds);
+
+          if (cancelled || disposedRef.current) return;
+          if (respUsersRes.error) {
+            console.warn("[LiveMap] users barangay error:", respUsersRes.error);
+          } else {
+            (respUsersRes.data ?? []).forEach((u: any) => {
+              if (u?.id && u?.barangay) barangayById.set(u.id, u.barangay);
+            });
+          }
+        }
+
         const merged: Responder[] = (respRes.data as any[]).map((r) => ({
           id: r.id,
           team_name: r.team_name,
@@ -743,7 +774,9 @@ export default function LiveMapView() {
     // their home barangay). The sidebar list filters by home barangay.
     let base = responders;
     if (selectedBarangay) {
-      base = base.filter((r) => r.home_barangay === selectedBarangay);
+      base = base.filter(
+        (r) => matchesResponderBarangay(r, selectedBarangay),
+      );
     }
     if (!listSearch.trim()) return base;
     const q = listSearch.toLowerCase();
