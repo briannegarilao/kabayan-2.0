@@ -228,7 +228,7 @@ async def run_assignment_engine(trigger_incident_id: str | None = None) -> dict:
             if inc["id"] not in assigned_incident_ids and inc["id"] != incident["id"]
         ]
 
-        trip = build_trip(
+        trip = await build_trip(
             responder=best,
             primary_incident=incident,
             all_pending=remaining_pending,
@@ -263,6 +263,11 @@ async def run_assignment_engine(trigger_incident_id: str | None = None) -> dict:
                     "evac_center_id": trip["evac_center_id"],
                     "total_distance_km": trip["total_distance_km"],
                     "estimated_time_minutes": trip["estimated_time_minutes"],
+                    "route_geometry": trip.get("route_geometry"),
+                    "route_legs": trip.get("route_legs", []),
+                    "route_distance_meters": trip.get("route_distance_meters"),
+                    "route_duration_seconds": trip.get("route_duration_seconds"),
+                    "route_computed_at": now if trip.get("route_geometry") else None,
                     "is_simulated": incident.get("is_simulated", False),
                     "simulation_label": incident.get("simulation_label"),
                     "simulation_metadata": {

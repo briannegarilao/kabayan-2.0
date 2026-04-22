@@ -38,6 +38,7 @@ interface SOSIncident {
   location: any;
   created_at: string;
 }
+
 interface Responder {
   id: string;
   team_name: string | null;
@@ -49,6 +50,7 @@ interface Responder {
   last_location_update: string | null;
   home_barangay: string | null;
 }
+
 interface EvacCenter {
   id: string;
   name: string;
@@ -58,12 +60,20 @@ interface EvacCenter {
   is_open: boolean;
   location: any;
 }
+
 interface TripPlan {
   id: string;
   responder_id: string;
   status: string;
   stops: any[];
+  route_geometry?: {
+    type: "LineString";
+    coordinates: [number, number][];
+  } | null;
+  route_distance_meters?: number | null;
+  route_duration_seconds?: number | null;
 }
+
 type TabId = "sos" | "responders" | "evacs";
 
 function normalizeBarangay(value: string | null | undefined) {
@@ -85,8 +95,12 @@ function matchesResponderBarangay(
 }
 
 // ── Icon factories ────────────────────────────────────────────
-function createSOSIcon(severity: string | null, isCritical: boolean): L.DivIcon {
-  const color = SEVERITY_COLORS[severity || "pending"] || SEVERITY_COLORS.pending;
+function createSOSIcon(
+  severity: string | null,
+  isCritical: boolean,
+): L.DivIcon {
+  const color =
+    SEVERITY_COLORS[severity || "pending"] || SEVERITY_COLORS.pending;
   return L.divIcon({
     className: "",
     html: `<div style="
@@ -99,6 +113,7 @@ function createSOSIcon(severity: string | null, isCritical: boolean): L.DivIcon 
     iconAnchor: [11, 11],
   });
 }
+
 function createResponderIcon(isAvailable: boolean): L.DivIcon {
   const color = isAvailable ? "#22c55e" : "#f59e0b";
   return L.divIcon({
@@ -114,6 +129,7 @@ function createResponderIcon(isAvailable: boolean): L.DivIcon {
     iconAnchor: [12, 12],
   });
 }
+
 function createEvacIcon(isOpen: boolean): L.DivIcon {
   const color = isOpen ? "#0d9488" : "#475569";
   const strokeColor = isOpen ? "#14b8a6" : "#64748b";
@@ -156,16 +172,24 @@ function buildSOSPopup(inc: SOSIncident): HTMLElement {
       </div>
       ${inc.message ? `<div style="color:#9ca3af;font-style:italic;margin-bottom:4px;">"${inc.message}"</div>` : ""}
       <div style="color:#6b7280;font-size:11px;">
-        ${new Date(inc.created_at).toLocaleString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+        ${new Date(inc.created_at).toLocaleString("en-PH", {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
       </div>
     </div>`;
   return el;
 }
+
 function buildResponderPopup(r: Responder): HTMLElement {
   const el = document.createElement("div");
   el.style.minWidth = "200px";
-  const loadPct = r.max_capacity && r.max_capacity > 0
-    ? Math.round(((r.current_load ?? 0) / r.max_capacity) * 100) : 0;
+  const loadPct =
+    r.max_capacity && r.max_capacity > 0
+      ? Math.round(((r.current_load ?? 0) / r.max_capacity) * 100)
+      : 0;
   const statusColor = r.is_available ? "#22c55e" : "#f59e0b";
   el.innerHTML = `
     <div style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;">
@@ -182,11 +206,13 @@ function buildResponderPopup(r: Responder): HTMLElement {
     </div>`;
   return el;
 }
+
 function buildEvacPopup(e: EvacCenter): HTMLElement {
   const el = document.createElement("div");
   el.style.minWidth = "200px";
   const capacity = e.capacity ?? 0;
-  const occPct = capacity > 0 ? Math.round((e.current_occupancy / capacity) * 100) : 0;
+  const occPct =
+    capacity > 0 ? Math.round((e.current_occupancy / capacity) * 100) : 0;
   const statusColor = e.is_open ? "#14b8a6" : "#64748b";
   el.innerHTML = `
     <div style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;">
@@ -196,16 +222,29 @@ function buildEvacPopup(e: EvacCenter): HTMLElement {
         <span style="width:8px;height:8px;border-radius:50%;background:${statusColor};"></span>
         <span style="color:${statusColor};font-weight:600;font-size:11px;">${e.is_open ? "OPEN" : "Closed"}</span>
       </div>
-      ${capacity > 0 ? `<div style="color:#9ca3af;font-size:12px;">
+      ${
+        capacity > 0
+          ? `<div style="color:#9ca3af;font-size:12px;">
         Occupancy: <strong>${e.current_occupancy}/${capacity}</strong> (${occPct}%)
-      </div>` : ""}
+      </div>`
+          : ""
+      }
     </div>`;
   return el;
 }
 
-const TRIP_COLORS = ["#f59e0b", "#3b82f6", "#8b5cf6", "#ec4899", "#06b6d4", "#14b8a6"];
+const TRIP_COLORS = [
+  "#f59e0b",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+  "#14b8a6",
+];
+
 function tripColor(responderId: string): string {
-  const hash = responderId.charCodeAt(0) + responderId.charCodeAt(responderId.length - 1);
+  const hash =
+    responderId.charCodeAt(0) + responderId.charCodeAt(responderId.length - 1);
   return TRIP_COLORS[hash % TRIP_COLORS.length];
 }
 
@@ -215,6 +254,7 @@ interface BoundaryGeoJSON {
   properties: { name: string };
   geometry: { type: "Polygon"; coordinates: number[][][] };
 }
+
 interface BarangaysGeoJSON {
   type: "FeatureCollection";
   features: Array<{
@@ -247,8 +287,7 @@ export default function LiveMapView() {
   const responderMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const evacMarkersRef = useRef<Map<string, L.Marker>>(new Map());
 
-  // Disposal guard — set true in cleanup to prevent any pending async work
-  // from touching a disposed map/canvas.
+  // Disposal guard
   const disposedRef = useRef(false);
 
   // Data state
@@ -257,7 +296,9 @@ export default function LiveMapView() {
   const [evacCenters, setEvacCenters] = useState<EvacCenter[]>([]);
   const [activeTrips, setActiveTrips] = useState<TripPlan[]>([]);
 
-  const [cityBoundary, setCityBoundary] = useState<BoundaryGeoJSON | null>(null);
+  const [cityBoundary, setCityBoundary] = useState<BoundaryGeoJSON | null>(
+    null,
+  );
   const [barangays, setBarangays] = useState<BarangaysGeoJSON | null>(null);
 
   const [showSOS, setShowSOS] = useState(true);
@@ -275,6 +316,7 @@ export default function LiveMapView() {
   // ── Load GeoJSON files once ─────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+
     Promise.all([
       fetch("/geo/dasma-boundary.json").then((r) => r.json()),
       fetch("/geo/dasma-barangays.json").then((r) => r.json()),
@@ -285,15 +327,13 @@ export default function LiveMapView() {
         setBarangays(brgy as BarangaysGeoJSON);
       })
       .catch((err) => console.error("Failed to load boundary GeoJSON:", err));
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ── INIT MAP ────────────────────────────────────────────────
-  // CRITICAL: we do NOT use `preferCanvas: true` anymore. The Canvas renderer
-  // has a known bug where a pending _redraw() fires after the map is removed,
-  // causing `Cannot read properties of undefined (reading 'clearRect')`.
-  // The SVG renderer (default) does not have this bug and handles our marker
-  // count (~90) with no performance issue.
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
     disposedRef.current = false;
@@ -303,7 +343,6 @@ export default function LiveMapView() {
       zoom: MAP_CONFIG.defaultZoom,
       maxBounds: L.latLngBounds(MAP_CONFIG.maxBounds),
       maxBoundsViscosity: 1.0,
-      // preferCanvas: REMOVED — use SVG renderer to avoid clearRect crash
     });
 
     L.tileLayer(MAP_CONFIG.tileUrl, {
@@ -343,11 +382,13 @@ export default function LiveMapView() {
     return () => {
       disposedRef.current = true;
       clearTimeout(invalidateTimer);
+
       try {
         map.remove();
-      } catch (e) {
-        // swallow — cleanup, nothing to do
+      } catch {
+        // cleanup only
       }
+
       mapRef.current = null;
       sosClusterRef.current = null;
       responderLayerRef.current = null;
@@ -369,11 +410,13 @@ export default function LiveMapView() {
     const map = mapRef.current;
     if (!map || !cityBoundary || !barangays || disposedRef.current) return;
 
-    const dasmaRing: [number, number][] = cityBoundary.geometry.coordinates[0].map(
-      ([lng, lat]) => [lat, lng]
-    );
+    const dasmaRing: [number, number][] =
+      cityBoundary.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]);
     const worldRing: [number, number][] = [
-      [14.10, 120.60], [14.10, 121.30], [14.55, 121.30], [14.55, 120.60],
+      [14.1, 120.6],
+      [14.1, 121.3],
+      [14.55, 121.3],
+      [14.55, 120.6],
     ];
 
     const mask = L.polygon([worldRing, dasmaRing], {
@@ -387,14 +430,27 @@ export default function LiveMapView() {
     maskLayerRef.current = mask;
 
     const cityOutline = L.geoJSON(cityBoundary as any, {
-      style: { color: "#60a5fa", weight: 2.5, opacity: 0.9, fill: false, interactive: false } as any,
+      style: {
+        color: "#60a5fa",
+        weight: 2.5,
+        opacity: 0.9,
+        fill: false,
+        interactive: false,
+      } as any,
       interactive: false,
     });
     cityOutline.addTo(map);
     cityOutlineRef.current = cityOutline;
 
     const brgyLayer = L.geoJSON(barangays as any, {
-      style: { color: "#64748b", weight: 0.8, opacity: 0.6, fillColor: "#94a3b8", fillOpacity: 0.0, interactive: false } as any,
+      style: {
+        color: "#64748b",
+        weight: 0.8,
+        opacity: 0.6,
+        fillColor: "#94a3b8",
+        fillOpacity: 0.0,
+        interactive: false,
+      } as any,
       interactive: false,
     });
     brgyLayer.addTo(map);
@@ -407,9 +463,18 @@ export default function LiveMapView() {
 
     return () => {
       if (disposedRef.current) return;
-      if (maskLayerRef.current && map.hasLayer(maskLayerRef.current)) map.removeLayer(maskLayerRef.current);
-      if (cityOutlineRef.current && map.hasLayer(cityOutlineRef.current)) map.removeLayer(cityOutlineRef.current);
-      if (barangaysLayerRef.current && map.hasLayer(barangaysLayerRef.current)) map.removeLayer(barangaysLayerRef.current);
+      if (maskLayerRef.current && map.hasLayer(maskLayerRef.current)) {
+        map.removeLayer(maskLayerRef.current);
+      }
+      if (cityOutlineRef.current && map.hasLayer(cityOutlineRef.current)) {
+        map.removeLayer(cityOutlineRef.current);
+      }
+      if (
+        barangaysLayerRef.current &&
+        map.hasLayer(barangaysLayerRef.current)
+      ) {
+        map.removeLayer(barangaysLayerRef.current);
+      }
       maskLayerRef.current = null;
       cityOutlineRef.current = null;
       barangaysLayerRef.current = null;
@@ -420,6 +485,7 @@ export default function LiveMapView() {
     const map = mapRef.current;
     const layer = barangaysLayerRef.current;
     if (!map || !layer || disposedRef.current) return;
+
     if (showBarangays) {
       if (!map.hasLayer(layer)) map.addLayer(layer);
     } else {
@@ -438,18 +504,27 @@ export default function LiveMapView() {
 
     if (!selectedBarangay || !barangays) {
       if (!selectedBarangay && cityBoundary) {
-        map.flyTo(MAP_CONFIG.defaultCenter, MAP_CONFIG.defaultZoom, { duration: 0.9 });
+        map.flyTo(MAP_CONFIG.defaultCenter, MAP_CONFIG.defaultZoom, {
+          duration: 0.9,
+        });
       }
       return;
     }
 
     const feat = barangays.features.find(
-      (f) => f.properties.name.toLowerCase() === selectedBarangay.toLowerCase()
+      (f) => f.properties.name.toLowerCase() === selectedBarangay.toLowerCase(),
     );
     if (!feat) return;
 
     const highlight = L.geoJSON(feat as any, {
-      style: { color: "#3b82f6", weight: 3, opacity: 1, fillColor: "#3b82f6", fillOpacity: 0.12, interactive: false } as any,
+      style: {
+        color: "#3b82f6",
+        weight: 3,
+        opacity: 1,
+        fillColor: "#3b82f6",
+        fillOpacity: 0.12,
+        interactive: false,
+      } as any,
       interactive: false,
     });
     highlight.addTo(map);
@@ -462,45 +537,60 @@ export default function LiveMapView() {
   }, [selectedBarangay, barangays, cityBoundary]);
 
   // ── DATA FETCH ──────────────────────────────────────────────
-  // TWO-QUERY approach for responders: fetch responders AND role='responder'
-  // users separately, merge by id. This avoids any FK / schema-cache / RLS
-  // issues with the `users:users!inner(barangay)` embed syntax.
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       let incQ = supabase
         .from("sos_incidents")
-        .select("id, barangay, flood_severity, status, people_count, message, location, created_at")
+        .select(
+          "id, barangay, flood_severity, status, people_count, message, location, created_at",
+        )
         .in("status", ["pending", "assigned", "in_progress"])
         .limit(200);
+
       if (selectedBarangay) incQ = incQ.eq("barangay", selectedBarangay);
 
       let evacQ = supabase
         .from("evacuation_centers")
-        .select("id, name, barangay, capacity, current_occupancy, is_open, location");
+        .select(
+          "id, name, barangay, capacity, current_occupancy, is_open, location",
+        );
+
       if (selectedBarangay) evacQ = evacQ.eq("barangay", selectedBarangay);
 
       const [incRes, respRes, evacRes, tripRes] = await Promise.all([
         incQ,
         supabase
           .from("responders")
-          .select("id, team_name, vehicle_type, is_available, current_load, max_capacity, current_location, last_location_update"),
+          .select(
+            "id, team_name, vehicle_type, is_available, current_load, max_capacity, current_location, last_location_update",
+          ),
         evacQ,
-        supabase.from("trip_plans").select("id, responder_id, status, stops").eq("status", "active"),
+        supabase
+          .from("trip_plans")
+          .select(
+            "id, responder_id, status, stops, route_geometry, route_distance_meters, route_duration_seconds",
+          )
+          .eq("status", "active"),
       ]);
 
       if (cancelled || disposedRef.current) return;
 
-      if (incRes.error) console.error("[LiveMap] incidents error:", incRes.error);
-      if (respRes.error) console.error("[LiveMap] responders error:", respRes.error);
+      if (incRes.error)
+        console.error("[LiveMap] incidents error:", incRes.error);
+      if (respRes.error)
+        console.error("[LiveMap] responders error:", respRes.error);
       if (evacRes.error) console.error("[LiveMap] evacs error:", evacRes.error);
       if (tripRes.error) console.error("[LiveMap] trips error:", tripRes.error);
 
       if (incRes.data) setIncidents(incRes.data as SOSIncident[]);
 
       if (respRes.data) {
-        const responderIds = (respRes.data as any[]).map((r) => r.id).filter(Boolean);
+        const responderIds = (respRes.data as any[])
+          .map((r) => r.id)
+          .filter(Boolean);
+
         const barangayById = new Map<string, string>();
 
         if (responderIds.length > 0) {
@@ -510,6 +600,7 @@ export default function LiveMapView() {
             .in("id", responderIds);
 
           if (cancelled || disposedRef.current) return;
+
           if (respUsersRes.error) {
             console.warn("[LiveMap] users barangay error:", respUsersRes.error);
           } else {
@@ -530,6 +621,7 @@ export default function LiveMapView() {
           last_location_update: r.last_location_update,
           home_barangay: barangayById.get(r.id) ?? null,
         }));
+
         setResponders(merged);
       }
 
@@ -537,72 +629,112 @@ export default function LiveMapView() {
       if (tripRes.data) setActiveTrips(tripRes.data as TripPlan[]);
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [selectedBarangay]);
 
   // ── REALTIME ────────────────────────────────────────────────
   useEffect(() => {
     const channelId = `livemap-${Date.now()}`;
+
     const channel = supabase
       .channel(channelId)
-      .on("postgres_changes", { event: "*", schema: "public", table: "sos_incidents" }, (payload) => {
-        if (disposedRef.current) return;
-        if (payload.eventType === "INSERT") {
-          const n = payload.new as SOSIncident;
-          if (!["pending", "assigned", "in_progress"].includes(n.status)) return;
-          if (selectedBarangay && n.barangay !== selectedBarangay) return;
-          setIncidents((prev) => [n, ...prev]);
-        } else if (payload.eventType === "UPDATE") {
-          const u = payload.new as SOSIncident;
-          if (["resolved", "false_alarm"].includes(u.status)) {
-            setIncidents((prev) => prev.filter((i) => i.id !== u.id));
-          } else if (selectedBarangay && u.barangay !== selectedBarangay) {
-            setIncidents((prev) => prev.filter((i) => i.id !== u.id));
-          } else {
-            setIncidents((prev) => prev.map((i) => (i.id === u.id ? { ...i, ...u } : i)));
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sos_incidents" },
+        (payload) => {
+          if (disposedRef.current) return;
+
+          if (payload.eventType === "INSERT") {
+            const n = payload.new as SOSIncident;
+            if (!["pending", "assigned", "in_progress"].includes(n.status))
+              return;
+            if (selectedBarangay && n.barangay !== selectedBarangay) return;
+            setIncidents((prev) => [n, ...prev]);
+          } else if (payload.eventType === "UPDATE") {
+            const u = payload.new as SOSIncident;
+            if (["resolved", "false_alarm"].includes(u.status)) {
+              setIncidents((prev) => prev.filter((i) => i.id !== u.id));
+            } else if (selectedBarangay && u.barangay !== selectedBarangay) {
+              setIncidents((prev) => prev.filter((i) => i.id !== u.id));
+            } else {
+              setIncidents((prev) =>
+                prev.map((i) => (i.id === u.id ? { ...i, ...u } : i)),
+              );
+            }
+          } else if (payload.eventType === "DELETE") {
+            setIncidents((prev) =>
+              prev.filter((i) => i.id !== (payload.old as any).id),
+            );
           }
-        } else if (payload.eventType === "DELETE") {
-          setIncidents((prev) => prev.filter((i) => i.id !== (payload.old as any).id));
-        }
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "responders" }, (payload) => {
-        if (disposedRef.current) return;
-        setResponders((prev) =>
-          prev.map((r) =>
-            r.id !== payload.new.id
-              ? r
-              : { ...r, ...(payload.new as any), home_barangay: r.home_barangay }
-          )
-        );
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "evacuation_centers" }, (payload) => {
-        if (disposedRef.current) return;
-        const u = payload.new as EvacCenter;
-        if (selectedBarangay && u.barangay !== selectedBarangay) return;
-        setEvacCenters((prev) => prev.map((e) => (e.id === u.id ? { ...e, ...u } : e)));
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "trip_plans" }, (payload) => {
-        if (disposedRef.current) return;
-        if (payload.eventType === "INSERT") {
-          const n = payload.new as TripPlan;
-          if (n.status === "active") setActiveTrips((prev) => [...prev, n]);
-        } else if (payload.eventType === "UPDATE") {
-          const u = payload.new as TripPlan;
-          if (u.status === "active") {
-            setActiveTrips((prev) => {
-              const has = prev.find((t) => t.id === u.id);
-              return has ? prev.map((t) => (t.id === u.id ? u : t)) : [...prev, u];
-            });
-          } else {
-            setActiveTrips((prev) => prev.filter((t) => t.id !== u.id));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "responders" },
+        (payload) => {
+          if (disposedRef.current) return;
+          setResponders((prev) =>
+            prev.map((r) =>
+              r.id !== payload.new.id
+                ? r
+                : {
+                    ...r,
+                    ...(payload.new as any),
+                    home_barangay: r.home_barangay,
+                  },
+            ),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "evacuation_centers" },
+        (payload) => {
+          if (disposedRef.current) return;
+          const u = payload.new as EvacCenter;
+          if (selectedBarangay && u.barangay !== selectedBarangay) return;
+          setEvacCenters((prev) =>
+            prev.map((e) => (e.id === u.id ? { ...e, ...u } : e)),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "trip_plans" },
+        (payload) => {
+          if (disposedRef.current) return;
+
+          if (payload.eventType === "INSERT") {
+            const n = payload.new as TripPlan;
+            if (n.status === "active") {
+              setActiveTrips((prev) => [...prev, n]);
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const u = payload.new as TripPlan;
+            if (u.status === "active") {
+              setActiveTrips((prev) => {
+                const has = prev.find((t) => t.id === u.id);
+                return has
+                  ? prev.map((t) => (t.id === u.id ? u : t))
+                  : [...prev, u];
+              });
+            } else {
+              setActiveTrips((prev) => prev.filter((t) => t.id !== u.id));
+            }
+          } else if (payload.eventType === "DELETE") {
+            setActiveTrips((prev) =>
+              prev.filter((t) => t.id !== (payload.old as any).id),
+            );
           }
-        } else if (payload.eventType === "DELETE") {
-          setActiveTrips((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
-        }
-      })
+        },
+      )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [selectedBarangay]);
 
   // ── RENDER SOS MARKERS / HEATMAP ────────────────────────────
@@ -621,32 +753,62 @@ export default function LiveMapView() {
     if (!showSOS) return;
 
     const filtered = incidents.filter((i) => {
-      if (sosStatusFilter === "active") return ["pending", "assigned", "in_progress"].includes(i.status);
+      if (sosStatusFilter === "active") {
+        return ["pending", "assigned", "in_progress"].includes(i.status);
+      }
       if (sosStatusFilter === "all") return true;
       return i.status === sosStatusFilter;
     });
 
     if (heatmapMode) {
       const pts: [number, number, number][] = [];
+
       for (const inc of filtered) {
         const coords = parseLocation(inc.location);
         if (!coords) continue;
-        const w = inc.flood_severity === "critical" ? 1.0 : inc.flood_severity === "high" ? 0.7 : inc.flood_severity === "moderate" ? 0.5 : 0.3;
+
+        const w =
+          inc.flood_severity === "critical"
+            ? 1.0
+            : inc.flood_severity === "high"
+              ? 0.7
+              : inc.flood_severity === "moderate"
+                ? 0.5
+                : 0.3;
+
         pts.push([coords[0], coords[1], w]);
       }
+
       if (pts.length > 0) {
         // @ts-ignore
-        const layer = L.heatLayer(pts, { radius: 30, blur: 22, maxZoom: 17, gradient: { 0.2: "#22c55e", 0.5: "#f59e0b", 0.8: "#f97316", 1.0: "#ef4444" } });
+        const layer = L.heatLayer(pts, {
+          radius: 30,
+          blur: 22,
+          maxZoom: 17,
+          gradient: {
+            0.2: "#22c55e",
+            0.5: "#f59e0b",
+            0.8: "#f97316",
+            1.0: "#ef4444",
+          },
+        });
         layer.addTo(map);
         heatLayerRef.current = layer;
       }
+
       return;
     }
 
     for (const inc of filtered) {
       const coords = parseLocation(inc.location);
       if (!coords) continue;
-      const marker = L.marker(coords, { icon: createSOSIcon(inc.flood_severity, inc.flood_severity === "critical") });
+
+      const marker = L.marker(coords, {
+        icon: createSOSIcon(
+          inc.flood_severity,
+          inc.flood_severity === "critical",
+        ),
+      });
       marker.bindPopup(() => buildSOSPopup(inc), { maxWidth: 280 });
       cluster.addLayer(marker);
       sosMarkersRef.current.set(inc.id, marker);
@@ -657,14 +819,19 @@ export default function LiveMapView() {
   useEffect(() => {
     const layer = responderLayerRef.current;
     if (!layer || disposedRef.current) return;
+
     layer.clearLayers();
     responderMarkersRef.current.clear();
+
     if (!showResponders) return;
 
     for (const r of responders) {
       const coords = parseLocation(r.current_location);
       if (!coords) continue;
-      const marker = L.marker(coords, { icon: createResponderIcon(r.is_available) });
+
+      const marker = L.marker(coords, {
+        icon: createResponderIcon(r.is_available),
+      });
       marker.bindPopup(() => buildResponderPopup(r), { maxWidth: 260 });
       layer.addLayer(marker);
       responderMarkersRef.current.set(r.id, marker);
@@ -675,14 +842,19 @@ export default function LiveMapView() {
   useEffect(() => {
     const layer = evacLayerRef.current;
     if (!layer || disposedRef.current) return;
+
     layer.clearLayers();
     evacMarkersRef.current.clear();
+
     if (!showEvacs) return;
 
     for (const e of evacCenters) {
       const coords = parseLocation(e.location);
       if (!coords) continue;
-      const marker = L.marker(coords, { icon: createEvacIcon(e.is_open) });
+
+      const marker = L.marker(coords, {
+        icon: createEvacIcon(e.is_open),
+      });
       marker.bindPopup(() => buildEvacPopup(e), { maxWidth: 260 });
       layer.addLayer(marker);
       evacMarkersRef.current.set(e.id, marker);
@@ -693,24 +865,63 @@ export default function LiveMapView() {
   useEffect(() => {
     const layer = routeLayerRef.current;
     if (!layer || disposedRef.current) return;
+
     layer.clearLayers();
     if (!showTrips) return;
 
     for (const trip of activeTrips) {
+      const color = tripColor(trip.responder_id);
+
+      // Preferred: render stored OSRM road geometry
+      const geometry = trip.route_geometry;
+      if (
+        geometry &&
+        geometry.type === "LineString" &&
+        Array.isArray(geometry.coordinates) &&
+        geometry.coordinates.length >= 2
+      ) {
+        const latlngs = geometry.coordinates
+          .filter(
+            (coord): coord is [number, number] =>
+              Array.isArray(coord) &&
+              coord.length === 2 &&
+              typeof coord[0] === "number" &&
+              typeof coord[1] === "number",
+          )
+          .map(([lng, lat]) => [lat, lng] as [number, number]);
+
+        if (latlngs.length >= 2) {
+          const polyline = L.polyline(latlngs, {
+            color,
+            weight: 4,
+            opacity: 0.85,
+            dashArray: "8, 8",
+          });
+          layer.addLayer(polyline);
+          continue;
+        }
+      }
+
+      // Fallback: old straight-line rendering
       const responder = responders.find((r) => r.id === trip.responder_id);
-      const responderCoords = responder ? parseLocation(responder.current_location) : null;
+      const responderCoords = responder
+        ? parseLocation(responder.current_location)
+        : null;
 
       const stopCoords: [number, number][] = (trip.stops || [])
-        .filter((s: any) => typeof s?.lat === "number" && typeof s?.lng === "number")
+        .filter(
+          (s: any) => typeof s?.lat === "number" && typeof s?.lng === "number",
+        )
         .map((s: any) => [s.lat as number, s.lng as number]);
 
       const path: [number, number][] = [];
       if (responderCoords) path.push(responderCoords);
       path.push(...stopCoords);
+
       if (path.length < 2) continue;
 
       const polyline = L.polyline(path, {
-        color: tripColor(trip.responder_id),
+        color,
         weight: 4,
         opacity: 0.75,
         dashArray: "8, 8",
@@ -720,7 +931,11 @@ export default function LiveMapView() {
   }, [activeTrips, responders, showTrips]);
 
   // ── List handlers ───────────────────────────────────────────
-  function focusLocation(coords: [number, number], markerKey: string, markerType: TabId) {
+  function focusLocation(
+    coords: [number, number],
+    markerKey: string,
+    markerType: TabId,
+  ) {
     const map = mapRef.current;
     if (!map || disposedRef.current) return;
 
@@ -728,6 +943,7 @@ export default function LiveMapView() {
 
     setTimeout(() => {
       if (disposedRef.current) return;
+
       if (markerType === "sos") {
         const marker = sosMarkersRef.current.get(markerKey);
         const cluster = sosClusterRef.current;
@@ -748,52 +964,59 @@ export default function LiveMapView() {
 
   function viewDetails(tab: TabId, id: string) {
     if (tab === "sos") router.push(`/dashboard/incidents?focus=${id}`);
-    else if (tab === "responders") router.push(`/dashboard/responders?focus=${id}`);
-    else if (tab === "evacs") router.push(`/dashboard/evacuation?focus=${id}`);
+    else if (tab === "responders") {
+      router.push(`/dashboard/responders?focus=${id}`);
+    } else if (tab === "evacs") {
+      router.push(`/dashboard/evacuation?focus=${id}`);
+    }
   }
 
   // ── Derived filtered lists ──────────────────────────────────
   const filteredIncidents = useMemo(() => {
     const base = incidents.filter((i) => {
-      if (sosStatusFilter === "active") return ["pending", "assigned", "in_progress"].includes(i.status);
+      if (sosStatusFilter === "active") {
+        return ["pending", "assigned", "in_progress"].includes(i.status);
+      }
       if (sosStatusFilter === "all") return true;
       return i.status === sosStatusFilter;
     });
+
     if (!listSearch.trim()) return base;
+
     const q = listSearch.toLowerCase();
     return base.filter(
       (i) =>
         i.barangay.toLowerCase().includes(q) ||
         (i.message?.toLowerCase().includes(q) ?? false) ||
-        (i.flood_severity?.toLowerCase().includes(q) ?? false)
+        (i.flood_severity?.toLowerCase().includes(q) ?? false),
     );
   }, [incidents, sosStatusFilter, listSearch]);
 
   const filteredResponders = useMemo(() => {
-    // Markers on the map are ALL responders (so they stay visible when leaving
-    // their home barangay). The sidebar list filters by home barangay.
     let base = responders;
+
     if (selectedBarangay) {
-      base = base.filter(
-        (r) => matchesResponderBarangay(r, selectedBarangay),
-      );
+      base = base.filter((r) => matchesResponderBarangay(r, selectedBarangay));
     }
+
     if (!listSearch.trim()) return base;
+
     const q = listSearch.toLowerCase();
     return base.filter(
       (r) =>
         (r.team_name?.toLowerCase().includes(q) ?? false) ||
-        (r.vehicle_type?.toLowerCase().includes(q) ?? false)
+        (r.vehicle_type?.toLowerCase().includes(q) ?? false),
     );
   }, [responders, listSearch, selectedBarangay]);
 
   const filteredEvacs = useMemo(() => {
     if (!listSearch.trim()) return evacCenters;
     const q = listSearch.toLowerCase();
+
     return evacCenters.filter(
       (e) =>
         e.name.toLowerCase().includes(q) ||
-        e.barangay.toLowerCase().includes(q)
+        e.barangay.toLowerCase().includes(q),
     );
   }, [evacCenters, listSearch]);
 
@@ -807,6 +1030,24 @@ export default function LiveMapView() {
     <div className="relative h-full w-full bg-gray-950">
       <div ref={containerRef} className="h-full w-full" />
 
+      <div className="absolute bottom-4 right-4 z-[1000] rounded-xl border border-gray-800 bg-gray-900/95 px-3 py-2 shadow-2xl backdrop-blur">
+        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+          <span className="text-gray-500">Severity:</span>
+          <div className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-[#22c55e]" /> Low
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-[#f59e0b]" /> Moderate
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-[#f97316]" /> High
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-[#ef4444]" /> Critical
+          </div>
+        </div>
+      </div>
+
       <div className="absolute left-4 top-4 bottom-4 z-[1000] flex w-80 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900/95 shadow-2xl backdrop-blur">
         <div className="border-b border-gray-800 p-4">
           {selectedBarangay && (
@@ -816,20 +1057,34 @@ export default function LiveMapView() {
             </div>
           )}
 
-          <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Map Layers</h3>
+          <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            Map Layers
+          </h3>
 
           <div className="space-y-2.5">
             <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input type="checkbox" checked={showSOS} onChange={(e) => setShowSOS(e.target.checked)} className="h-4 w-4 rounded accent-red-500" />
+              <input
+                type="checkbox"
+                checked={showSOS}
+                onChange={(e) => setShowSOS(e.target.checked)}
+                className="h-4 w-4 rounded accent-red-500"
+              />
               <AlertTriangle className="h-4 w-4 text-red-400" />
               <span>SOS Incidents</span>
-              <span className="ml-auto text-[10px] text-gray-500">{activeCounts.sos}</span>
+              <span className="ml-auto text-[10px] text-gray-500">
+                {activeCounts.sos}
+              </span>
             </label>
 
             {showSOS && (
               <div className="ml-6">
                 <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-400">
-                  <input type="checkbox" checked={heatmapMode} onChange={(e) => setHeatmapMode(e.target.checked)} className="h-3 w-3 rounded accent-orange-500" />
+                  <input
+                    type="checkbox"
+                    checked={heatmapMode}
+                    onChange={(e) => setHeatmapMode(e.target.checked)}
+                    className="h-3 w-3 rounded accent-orange-500"
+                  />
                   <Flame className="h-3 w-3 text-orange-400" />
                   Heatmap mode
                 </label>
@@ -837,43 +1092,75 @@ export default function LiveMapView() {
             )}
 
             <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input type="checkbox" checked={showResponders} onChange={(e) => setShowResponders(e.target.checked)} className="h-4 w-4 rounded accent-amber-500" />
+              <input
+                type="checkbox"
+                checked={showResponders}
+                onChange={(e) => setShowResponders(e.target.checked)}
+                className="h-4 w-4 rounded accent-amber-500"
+              />
               <Users className="h-4 w-4 text-amber-400" />
               <span>Responders</span>
-              <span className="ml-auto text-[10px] text-gray-500">{responders.length}</span>
+              <span className="ml-auto text-[10px] text-gray-500">
+                {responders.length}
+              </span>
             </label>
 
             <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input type="checkbox" checked={showEvacs} onChange={(e) => setShowEvacs(e.target.checked)} className="h-4 w-4 rounded accent-teal-500" />
+              <input
+                type="checkbox"
+                checked={showEvacs}
+                onChange={(e) => setShowEvacs(e.target.checked)}
+                className="h-4 w-4 rounded accent-teal-500"
+              />
               <Building2 className="h-4 w-4 text-teal-400" />
               <span>Evac Centers</span>
-              <span className="ml-auto text-[10px] text-gray-500">{evacCenters.length}</span>
+              <span className="ml-auto text-[10px] text-gray-500">
+                {evacCenters.length}
+              </span>
             </label>
 
             <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input type="checkbox" checked={showTrips} onChange={(e) => setShowTrips(e.target.checked)} className="h-4 w-4 rounded accent-purple-500" />
+              <input
+                type="checkbox"
+                checked={showTrips}
+                onChange={(e) => setShowTrips(e.target.checked)}
+                className="h-4 w-4 rounded accent-purple-500"
+              />
               <Activity className="h-4 w-4 text-purple-400" />
               <span>Active Routes</span>
-              <span className="ml-auto text-[10px] text-gray-500">{activeTrips.length}</span>
+              <span className="ml-auto text-[10px] text-gray-500">
+                {activeTrips.length}
+              </span>
             </label>
 
             <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input type="checkbox" checked={showBarangays} onChange={(e) => setShowBarangays(e.target.checked)} className="h-4 w-4 rounded accent-slate-500" />
+              <input
+                type="checkbox"
+                checked={showBarangays}
+                onChange={(e) => setShowBarangays(e.target.checked)}
+                className="h-4 w-4 rounded accent-slate-500"
+              />
               <MapPin className="h-4 w-4 text-slate-400" />
               <span>Barangay Outlines</span>
-              <span className="ml-auto text-[10px] text-gray-500">{barangays?.features.length ?? "—"}</span>
+              <span className="ml-auto text-[10px] text-gray-500">
+                {barangays?.features.length ?? "—"}
+              </span>
             </label>
           </div>
 
           {showSOS && (
             <div className="mt-3 border-t border-gray-800 pt-3">
-              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">SOS Status</label>
+              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">
+                SOS Status
+              </label>
               <select
                 value={sosStatusFilter}
                 onChange={(e) => setSosStatusFilter(e.target.value)}
                 className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-blue-500"
               >
-                <option value="active">Active (pending/assigned/in progress)</option>
+                <option value="active">
+                  Active (pending/assigned/in progress)
+                </option>
                 <option value="pending">Pending only</option>
                 <option value="assigned">Assigned only</option>
                 <option value="in_progress">In Progress only</option>
@@ -885,9 +1172,27 @@ export default function LiveMapView() {
 
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex border-b border-gray-800">
-            <TabButton active={activeTab === "sos"} onClick={() => setActiveTab("sos")} label="SOS" count={activeCounts.sos} color="text-red-400" />
-            <TabButton active={activeTab === "responders"} onClick={() => setActiveTab("responders")} label="Responders" count={activeCounts.responders} color="text-amber-400" />
-            <TabButton active={activeTab === "evacs"} onClick={() => setActiveTab("evacs")} label="Evacs" count={activeCounts.evacs} color="text-teal-400" />
+            <TabButton
+              active={activeTab === "sos"}
+              onClick={() => setActiveTab("sos")}
+              label="SOS"
+              count={activeCounts.sos}
+              color="text-red-400"
+            />
+            <TabButton
+              active={activeTab === "responders"}
+              onClick={() => setActiveTab("responders")}
+              label="Responders"
+              count={activeCounts.responders}
+              color="text-amber-400"
+            />
+            <TabButton
+              active={activeTab === "evacs"}
+              onClick={() => setActiveTab("evacs")}
+              label="Evacs"
+              count={activeCounts.evacs}
+              color="text-teal-400"
+            />
           </div>
 
           <div className="relative border-b border-gray-800 p-2">
@@ -902,8 +1207,8 @@ export default function LiveMapView() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {activeTab === "sos" && (
-              filteredIncidents.length === 0 ? (
+            {activeTab === "sos" &&
+              (filteredIncidents.length === 0 ? (
                 <EmptyState message="No SOS incidents" />
               ) : (
                 <ul className="divide-y divide-gray-800">
@@ -920,11 +1225,10 @@ export default function LiveMapView() {
                     />
                   ))}
                 </ul>
-              )
-            )}
+              ))}
 
-            {activeTab === "responders" && (
-              filteredResponders.length === 0 ? (
+            {activeTab === "responders" &&
+              (filteredResponders.length === 0 ? (
                 <EmptyState message="No responders" />
               ) : (
                 <ul className="divide-y divide-gray-800">
@@ -941,11 +1245,10 @@ export default function LiveMapView() {
                     />
                   ))}
                 </ul>
-              )
-            )}
+              ))}
 
-            {activeTab === "evacs" && (
-              filteredEvacs.length === 0 ? (
+            {activeTab === "evacs" &&
+              (filteredEvacs.length === 0 ? (
                 <EmptyState message="No evacuation centers" />
               ) : (
                 <ul className="divide-y divide-gray-800">
@@ -962,26 +1265,22 @@ export default function LiveMapView() {
                     />
                   ))}
                 </ul>
-              )
-            )}
+              ))}
           </div>
-        </div>
-      </div>
-
-      <div className="absolute bottom-4 right-4 z-[1000] rounded-xl border border-gray-800 bg-gray-900/95 px-3 py-2 shadow-2xl backdrop-blur">
-        <div className="flex items-center gap-3 text-[10px] text-gray-400">
-          <span className="text-gray-500">Severity:</span>
-          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#22c55e]" /> Low</div>
-          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#f59e0b]" /> Moderate</div>
-          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#f97316]" /> High</div>
-          <div className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#ef4444]" /> Critical</div>
         </div>
       </div>
 
       <style jsx global>{`
         @keyframes kabayan-pulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.25); opacity: 0.75; }
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          50% {
+            transform: scale(1.25);
+            opacity: 0.75;
+          }
         }
       `}</style>
     </div>
@@ -989,15 +1288,25 @@ export default function LiveMapView() {
 }
 
 function TabButton({
-  active, onClick, label, count, color,
+  active,
+  onClick,
+  label,
+  count,
+  color,
 }: {
-  active: boolean; onClick: () => void; label: string; count: number; color: string;
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  color: string;
 }) {
   return (
     <button
       onClick={onClick}
       className={`flex-1 border-b-2 px-2 py-2.5 text-xs font-medium transition-colors ${
-        active ? `border-blue-500 ${color}` : "border-transparent text-gray-500 hover:text-gray-300"
+        active
+          ? `border-blue-500 ${color}`
+          : "border-transparent text-gray-500 hover:text-gray-300"
       }`}
     >
       {label}
@@ -1016,20 +1325,41 @@ function EmptyState({ message }: { message: string }) {
 }
 
 function SOSListItem({
-  incident, highlighted, onFocus, onViewDetails,
+  incident,
+  highlighted,
+  onFocus,
+  onViewDetails,
 }: {
-  incident: SOSIncident; highlighted: boolean; onFocus: () => void; onViewDetails: () => void;
+  incident: SOSIncident;
+  highlighted: boolean;
+  onFocus: () => void;
+  onViewDetails: () => void;
 }) {
   const color = SEVERITY_COLORS[incident.flood_severity || "pending"];
+
   return (
-    <li className={`group transition-colors ${highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"}`}>
+    <li
+      className={`group transition-colors ${
+        highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"
+      }`}
+    >
       <div className="flex items-start gap-2 p-2.5">
-        <button onClick={onFocus} className="flex flex-1 items-start gap-2 text-left">
-          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+        <button
+          onClick={onFocus}
+          className="flex flex-1 items-start gap-2 text-left"
+        >
+          <span
+            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: color }}
+          />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium text-gray-200">{incident.barangay}</div>
+            <div className="truncate text-xs font-medium text-gray-200">
+              {incident.barangay}
+            </div>
             <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-500">
-              <span className="capitalize">{incident.flood_severity || "assessing"}</span>
+              <span className="capitalize">
+                {incident.flood_severity || "assessing"}
+              </span>
               <span>•</span>
               <span>{incident.status.replace("_", " ")}</span>
               <span>•</span>
@@ -1037,6 +1367,7 @@ function SOSListItem({
             </div>
           </div>
         </button>
+
         <button
           onClick={onViewDetails}
           title="View details"
@@ -1050,18 +1381,39 @@ function SOSListItem({
 }
 
 function ResponderListItem({
-  responder, highlighted, onFocus, onViewDetails,
+  responder,
+  highlighted,
+  onFocus,
+  onViewDetails,
 }: {
-  responder: Responder; highlighted: boolean; onFocus: () => void; onViewDetails: () => void;
+  responder: Responder;
+  highlighted: boolean;
+  onFocus: () => void;
+  onViewDetails: () => void;
 }) {
   const color = responder.is_available ? "#22c55e" : "#f59e0b";
-  const loadPct = responder.max_capacity && responder.max_capacity > 0
-    ? Math.round(((responder.current_load ?? 0) / responder.max_capacity) * 100) : 0;
+  const loadPct =
+    responder.max_capacity && responder.max_capacity > 0
+      ? Math.round(
+          ((responder.current_load ?? 0) / responder.max_capacity) * 100,
+        )
+      : 0;
+
   return (
-    <li className={`group transition-colors ${highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"}`}>
+    <li
+      className={`group transition-colors ${
+        highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"
+      }`}
+    >
       <div className="flex items-start gap-2 p-2.5">
-        <button onClick={onFocus} className="flex flex-1 items-start gap-2 text-left">
-          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+        <button
+          onClick={onFocus}
+          className="flex flex-1 items-start gap-2 text-left"
+        >
+          <span
+            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: color }}
+          />
           <div className="min-w-0 flex-1">
             <div className="truncate text-xs font-medium text-gray-200">
               {responder.team_name || "Responder"}
@@ -1074,10 +1426,13 @@ function ResponderListItem({
               <span>Load {loadPct}%</span>
             </div>
             {responder.home_barangay && (
-              <div className="mt-0.5 text-[10px] text-gray-600">{responder.home_barangay}</div>
+              <div className="mt-0.5 text-[10px] text-gray-600">
+                {responder.home_barangay}
+              </div>
             )}
           </div>
         </button>
+
         <button
           onClick={onViewDetails}
           title="View details"
@@ -1091,29 +1446,58 @@ function ResponderListItem({
 }
 
 function EvacListItem({
-  evac, highlighted, onFocus, onViewDetails,
+  evac,
+  highlighted,
+  onFocus,
+  onViewDetails,
 }: {
-  evac: EvacCenter; highlighted: boolean; onFocus: () => void; onViewDetails: () => void;
+  evac: EvacCenter;
+  highlighted: boolean;
+  onFocus: () => void;
+  onViewDetails: () => void;
 }) {
   const color = evac.is_open ? "#14b8a6" : "#64748b";
   const capacity = evac.capacity ?? 0;
+
   return (
-    <li className={`group transition-colors ${highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"}`}>
+    <li
+      className={`group transition-colors ${
+        highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"
+      }`}
+    >
       <div className="flex items-start gap-2 p-2.5">
-        <button onClick={onFocus} className="flex flex-1 items-start gap-2 text-left">
-          <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+        <button
+          onClick={onFocus}
+          className="flex flex-1 items-start gap-2 text-left"
+        >
+          <span
+            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: color }}
+          />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium text-gray-200">{evac.name}</div>
+            <div className="truncate text-xs font-medium text-gray-200">
+              {evac.name}
+            </div>
             <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-500">
               <span className="truncate">{evac.barangay}</span>
               <span>•</span>
-              <span className={evac.is_open ? "text-teal-400" : "text-gray-500"}>
+              <span
+                className={evac.is_open ? "text-teal-400" : "text-gray-500"}
+              >
                 {evac.is_open ? "OPEN" : "Closed"}
               </span>
-              {capacity > 0 && (<><span>•</span><span>{evac.current_occupancy}/{capacity}</span></>)}
+              {capacity > 0 && (
+                <>
+                  <span>•</span>
+                  <span>
+                    {evac.current_occupancy}/{capacity}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </button>
+
         <button
           onClick={onViewDetails}
           title="View details"
