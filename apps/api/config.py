@@ -24,11 +24,11 @@ class Settings(BaseSettings):
 
     # CORS origins allowed to call this API
     CORS_ORIGINS: list[str] = [
-        "http://localhost:3000",          # Next.js dev
-        "https://kabayan.vercel.app",     # Production dashboard
+        "http://localhost:3000",
+        "https://kabayan.vercel.app",
     ]
 
-    # Dasmariñas City coordinates (hardcoded — never changes)
+    # Dasmariñas City coordinates
     DASMA_LAT: float = 14.3294
     DASMA_LNG: float = 120.9367
 
@@ -36,11 +36,45 @@ class Settings(BaseSettings):
     WEATHER_CACHE_MINUTES: int = 30
     ROUTE_CACHE_HOURS: int = 24
 
+    # App environment
+    APP_ENV: str = "development"  # development | staging | production
+
+    # Dev Console controls
+    DEV_CONSOLE_ENABLED: bool = False
+    DEV_CONSOLE_ADMIN_ENABLED: bool = False
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
-        "extra": "ignore",  # Don't crash on unknown env vars
+        "extra": "ignore",
     }
+
+    @property
+    def is_development(self) -> bool:
+        return self.APP_ENV == "development"
+
+    @property
+    def is_staging(self) -> bool:
+        return self.APP_ENV == "staging"
+
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV == "production"
+
+    @property
+    def dev_console_backend_enabled(self) -> bool:
+        """
+        Backend rule:
+        - always allow in development if DEV_CONSOLE_ENABLED=true
+        - optionally allow later in staging/production if DEV_CONSOLE_ADMIN_ENABLED=true
+        """
+        if not self.DEV_CONSOLE_ENABLED:
+            return False
+
+        if self.is_development:
+            return True
+
+        return self.DEV_CONSOLE_ADMIN_ENABLED
 
 
 @lru_cache()

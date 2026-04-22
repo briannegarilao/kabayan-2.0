@@ -1,20 +1,36 @@
 # apps/api/main.py
-# REPLACES existing main.py — adds trips router for Phase 2
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+
 from config import get_settings
 from services.supabase_client import init_supabase
-from routers import sos, responders, analytics, routing, weather, trips
+from services.dev_logs import add_dev_log
+from routers import sos, responders, analytics, routing, weather, trips, dev
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_supabase()
-    print("[STARTUP] Supabase client initialized")
-    print("[STARTUP] KABAYAN API v2 — PWCD Assignment Engine active")
+    add_dev_log(
+        source="SYSTEM",
+        level="INFO",
+        event="startup",
+        message="Supabase client initialized",
+    )
+    add_dev_log(
+        source="SYSTEM",
+        level="INFO",
+        event="startup",
+        message="KABAYAN API v2 — PWCD Assignment Engine active",
+    )
     yield
-    print("[SHUTDOWN] KABAYAN API shutting down")
+    add_dev_log(
+        source="SYSTEM",
+        level="INFO",
+        event="shutdown",
+        message="KABAYAN API shutting down",
+    )
 
 
 app = FastAPI(
@@ -25,6 +41,7 @@ app = FastAPI(
 )
 
 settings = get_settings()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -33,13 +50,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers ───────────────────────────────────────────────────────────
+# Main routers
 app.include_router(sos.router, prefix="/api/sos", tags=["SOS"])
 app.include_router(responders.router, prefix="/api/responders", tags=["Responders"])
-app.include_router(trips.router, prefix="/api/trips", tags=["Trips"])  # NEW in Phase 2
+app.include_router(trips.router, prefix="/api/trips", tags=["Trips"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(routing.router, prefix="/api/routing", tags=["Routing"])
 app.include_router(weather.router, prefix="/api/weather", tags=["Weather"])
+
+# Dev router
+app.include_router(dev.router, prefix="/api/dev", tags=["Dev"])
 
 
 @app.get("/health", tags=["Health"])

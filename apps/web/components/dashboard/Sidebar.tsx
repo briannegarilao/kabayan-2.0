@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { createClient } from "../../lib/supabase/client";
 import { BarangayFilter } from "./BarangayFilter";
+import { isDevConsoleEnabledForClient } from "../../lib/dev-console";
 
 interface UserProfile {
   fullName: string;
@@ -45,8 +46,7 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
   //  - Always visible when NODE_ENV === "development"
   //  - In production, visible only to lgu_admin role
   //    (barangay_officials don't see it — they can't use these bulk tools)
-  const showDevConsole =
-    process.env.NODE_ENV === "development" || userProfile.role === "lgu_admin";
+  const showDevConsole = isDevConsoleEnabledForClient(userProfile.role);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -66,8 +66,12 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
           <Shield className="h-5 w-5 text-white" />
         </div>
         <div>
-          <h1 className="text-base font-bold tracking-tight text-white">KABAYAN</h1>
-          <p className="text-[10px] uppercase tracking-widest text-gray-500">Emergency Response</p>
+          <h1 className="text-base font-bold tracking-tight text-white">
+            KABAYAN
+          </h1>
+          <p className="text-[10px] uppercase tracking-widest text-gray-500">
+            Emergency Response
+          </p>
         </div>
       </div>
 
@@ -93,7 +97,9 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
                   className={`h-[18px] w-[18px] ${isActive ? "text-blue-400" : "text-gray-500"}`}
                 />
                 {item.label}
-                {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />}
+                {isActive && (
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-400" />
+                )}
               </Link>
             );
           })}
@@ -112,7 +118,9 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
               >
                 <Wrench
                   className={`h-[18px] w-[18px] ${
-                    pathname.startsWith("/dashboard/dev") ? "text-amber-400" : "text-gray-500"
+                    pathname.startsWith("/dashboard/dev")
+                      ? "text-amber-400"
+                      : "text-gray-500"
                   }`}
                 />
                 Dev Console
@@ -131,10 +139,14 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
 
       <div className="border-t border-gray-800 p-4">
         <div className="mb-3">
-          <p className="truncate text-sm font-medium text-gray-200">{userProfile.fullName}</p>
+          <p className="truncate text-sm font-medium text-gray-200">
+            {userProfile.fullName}
+          </p>
           <p className="truncate text-xs text-gray-500">{roleDisplay}</p>
           {userProfile.barangay && (
-            <p className="truncate text-xs text-gray-600">{userProfile.barangay}</p>
+            <p className="truncate text-xs text-gray-600">
+              {userProfile.barangay}
+            </p>
           )}
         </div>
         <button

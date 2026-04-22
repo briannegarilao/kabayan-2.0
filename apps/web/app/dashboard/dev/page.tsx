@@ -2,8 +2,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Wrench, Building2, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Wrench,
+  Building2,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import { createClient } from "../../../lib/supabase/client";
+import { isDevConsoleEnabledForClient } from "../../../lib/dev-console";
 
 const supabase = createClient();
 
@@ -14,26 +21,97 @@ interface EvacSummary {
 }
 
 export default function DevConsolePage() {
-  const [evacSummary, setEvacSummary] = useState<EvacSummary>({ total: 0, open: 0, closed: 0 });
+  const [evacSummary, setEvacSummary] = useState<EvacSummary>({
+    total: 0,
+    open: 0,
+    closed: 0,
+  });
   const [busy, setBusy] = useState<string | null>(null);
-  const [result, setResult] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
+  const [result, setResult] = useState<{
+    type: "ok" | "err";
+    msg: string;
+  } | null>(null);
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkAccess() {
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
+
+      if (!user) {
+        if (mounted) setAllowed(false);
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      const canOpen = isDevConsoleEnabledForClient(profile?.role ?? null);
+      if (mounted) setAllowed(canOpen);
+    }
+
+    checkAccess();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (allowed) {
+      refreshEvacSummary();
+    }
+  }, [allowed]);
 
   async function refreshEvacSummary() {
     const [totalRes, openRes] = await Promise.all([
-      supabase.from("evacuation_centers").select("id", { count: "exact", head: true }),
-      supabase.from("evacuation_centers").select("id", { count: "exact", head: true }).eq("is_open", true),
+      supabase
+        .from("evacuation_centers")
+        .select("id", { count: "exact", head: true }),
+      supabase
+        .from("evacuation_centers")
+        .select("id", { count: "exact", head: true })
+        .eq("is_open", true),
     ]);
     const total = totalRes.count ?? 0;
     const open = openRes.count ?? 0;
     setEvacSummary({ total, open, closed: total - open });
   }
 
-  useEffect(() => {
-    refreshEvacSummary();
-  }, []);
+  if (allowed === null) {
+    return (
+      <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 text-sm text-gray-400">
+        Checking Dev Console access...
+      </div>
+    );
+  }
+
+  if (!allowed) {
+    return (
+      <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5">
+        <p className="text-sm font-medium text-red-300">
+          Dev Console unavailable
+        </p>
+        <p className="mt-1 text-xs text-red-400/80">
+          This environment is not allowed to use the Dev Console.
+        </p>
+      </div>
+    );
+  }
+
+  // keep the rest of your existing component unchanged below this point
 
   async function bulkOpenAllEvacs() {
-    if (!confirm("Open ALL evacuation centers? This will set is_open=true for every center.")) return;
+    if (
+      !confirm(
+        "Open ALL evacuation centers? This will set is_open=true for every center.",
+      )
+    )
+      return;
     setBusy("open-all");
     setResult(null);
 
@@ -51,12 +129,20 @@ export default function DevConsolePage() {
       return;
     }
 
-    setResult({ type: "ok", msg: `Opened ${count ?? "all"} previously-closed centers.` });
+    setResult({
+      type: "ok",
+      msg: `Opened ${count ?? "all"} previously-closed centers.`,
+    });
     refreshEvacSummary();
   }
 
   async function bulkCloseAllEvacs() {
-    if (!confirm("Close ALL evacuation centers? This will set is_open=false and reset current_occupancy to 0 for every center.")) return;
+    if (
+      !confirm(
+        "Close ALL evacuation centers? This will set is_open=false and reset current_occupancy to 0 for every center.",
+      )
+    )
+      return;
     setBusy("close-all");
     setResult(null);
 
@@ -72,12 +158,16 @@ export default function DevConsolePage() {
       return;
     }
 
-    setResult({ type: "ok", msg: `Closed ${count ?? "all"} previously-open centers and reset occupancy.` });
+    setResult({
+      type: "ok",
+      msg: `Closed ${count ?? "all"} previously-open centers and reset occupancy.`,
+    });
     refreshEvacSummary();
   }
 
   async function resetAllOccupancy() {
-    if (!confirm("Reset current_occupancy to 0 for ALL evacuation centers?")) return;
+    if (!confirm("Reset current_occupancy to 0 for ALL evacuation centers?"))
+      return;
     setBusy("reset-occ");
     setResult(null);
 
@@ -93,7 +183,10 @@ export default function DevConsolePage() {
       return;
     }
 
-    setResult({ type: "ok", msg: `Reset ${count ?? "all"} centers to 0 occupancy.` });
+    setResult({
+      type: "ok",
+      msg: `Reset ${count ?? "all"} centers to 0 occupancy.`,
+    });
     refreshEvacSummary();
   }
 
@@ -103,10 +196,12 @@ export default function DevConsolePage() {
       <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-400/10 p-4">
         <Wrench className="h-5 w-5 shrink-0 text-amber-400" />
         <div>
-          <p className="text-sm font-medium text-amber-300">Developer Console</p>
+          <p className="text-sm font-medium text-amber-300">
+            Developer Console
+          </p>
           <p className="mt-0.5 text-xs text-amber-400/80">
-            Internal tools for testing and demo setup. Actions here directly modify production data.
-            Use with caution during presentations.
+            Internal tools for testing and demo setup. Actions here directly
+            modify production data. Use with caution during presentations.
           </p>
         </div>
       </div>
@@ -133,22 +228,36 @@ export default function DevConsolePage() {
       <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
         <div className="mb-4 flex items-center gap-2">
           <Building2 className="h-4 w-4 text-teal-400" />
-          <h3 className="text-sm font-medium text-gray-200">Evacuation Centers — Bulk Actions</h3>
+          <h3 className="text-sm font-medium text-gray-200">
+            Evacuation Centers — Bulk Actions
+          </h3>
         </div>
 
         {/* Current stats */}
         <div className="mb-4 grid grid-cols-3 gap-3">
           <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Total</p>
-            <p className="mt-0.5 text-xl font-bold text-white">{evacSummary.total}</p>
+            <p className="text-[10px] uppercase tracking-wider text-gray-500">
+              Total
+            </p>
+            <p className="mt-0.5 text-xl font-bold text-white">
+              {evacSummary.total}
+            </p>
           </div>
           <div className="rounded-lg border border-emerald-500/20 bg-emerald-400/5 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Open</p>
-            <p className="mt-0.5 text-xl font-bold text-emerald-400">{evacSummary.open}</p>
+            <p className="text-[10px] uppercase tracking-wider text-gray-500">
+              Open
+            </p>
+            <p className="mt-0.5 text-xl font-bold text-emerald-400">
+              {evacSummary.open}
+            </p>
           </div>
           <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Closed</p>
-            <p className="mt-0.5 text-xl font-bold text-gray-400">{evacSummary.closed}</p>
+            <p className="text-[10px] uppercase tracking-wider text-gray-500">
+              Closed
+            </p>
+            <p className="mt-0.5 text-xl font-bold text-gray-400">
+              {evacSummary.closed}
+            </p>
           </div>
         </div>
 
@@ -159,7 +268,9 @@ export default function DevConsolePage() {
             disabled={busy !== null || evacSummary.closed === 0}
             className="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {busy === "open-all" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {busy === "open-all" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
             Open ALL Centers
           </button>
 
@@ -168,7 +279,9 @@ export default function DevConsolePage() {
             disabled={busy !== null || evacSummary.open === 0}
             className="flex items-center justify-center gap-2 rounded-lg bg-gray-700 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {busy === "close-all" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {busy === "close-all" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
             Close ALL Centers
           </button>
 
@@ -177,20 +290,25 @@ export default function DevConsolePage() {
             disabled={busy !== null}
             className="flex items-center justify-center gap-2 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-xs font-medium text-gray-300 transition-colors hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {busy === "reset-occ" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {busy === "reset-occ" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
             Reset Occupancy
           </button>
         </div>
 
         <p className="mt-3 text-[10px] text-gray-600">
-          Closing a center also resets its current_occupancy to 0. Real-time subscriptions on the
-          Evacuation page will pick up these changes automatically.
+          Closing a center also resets its current_occupancy to 0. Real-time
+          subscriptions on the Evacuation page will pick up these changes
+          automatically.
         </p>
       </div>
 
       {/* Placeholder for future tools */}
       <div className="rounded-xl border border-dashed border-gray-800 bg-gray-900/30 p-5">
-        <h3 className="text-sm font-medium text-gray-400">More tools coming soon</h3>
+        <h3 className="text-sm font-medium text-gray-400">
+          More tools coming soon
+        </h3>
         <ul className="mt-2 space-y-1 text-xs text-gray-600">
           <li>• Seed synthetic SOS incidents for demo</li>
           <li>• Simulate responder movement along OSRM routes</li>
