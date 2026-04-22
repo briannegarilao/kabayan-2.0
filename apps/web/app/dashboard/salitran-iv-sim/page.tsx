@@ -1,27 +1,103 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MapPin, PlayCircle, ArrowRight, Sparkles } from "lucide-react";
+import {
+  MapPin,
+  PlayCircle,
+  ArrowRight,
+  Sparkles,
+  ShieldCheck,
+  Users,
+  House,
+  TriangleAlert,
+} from "lucide-react";
 import {
   SALITRAN_IV_NAME,
   SALITRAN_SCENARIOS,
+  getSalitranIVPolygon,
   startSalitranSimulationSession,
+  validateScenariosAgainstPolygon,
   type SalitranScenarioDef,
 } from "../../../lib/salitran-sim";
+
+interface ValidationState {
+  total: number;
+  passed: number;
+  failed: Array<{
+    scenarioId: string;
+    label: string;
+    inside: boolean;
+    kind: "incident" | "staging" | "evac";
+  }>;
+}
 
 export default function SalitranIVSimPage() {
   const router = useRouter();
   const [startingId, setStartingId] = useState<string | null>(null);
+  const [validation, setValidation] = useState<ValidationState | null>(null);
+  const [validationLoading, setValidationLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function runValidation() {
+      try {
+        const res = await fetch("/geo/dasma-barangays.json");
+        const geo = await res.json();
+
+        const polygon = getSalitranIVPolygon(geo);
+        if (!polygon) {
+          if (mounted) {
+            setValidation({
+              total: 0,
+              passed: 0,
+              failed: [],
+            });
+          }
+          return;
+        }
+
+        const result = validateScenariosAgainstPolygon(
+          polygon,
+          SALITRAN_SCENARIOS,
+        );
+
+        if (mounted) setValidation(result);
+      } catch {
+        if (mounted) {
+          setValidation({
+            total: 0,
+            passed: 0,
+            failed: [],
+          });
+        }
+      } finally {
+        if (mounted) setValidationLoading(false);
+      }
+    }
+
+    runValidation();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function handleStartScenario(scenario: SalitranScenarioDef) {
     setStartingId(scenario.id);
-
-    // Phase 1 = client-side session only
     startSalitranSimulationSession(scenario);
-
     router.push("/dashboard");
   }
+
+  const validationSummary = useMemo(() => {
+    if (validationLoading) return "Validating Salitran IV demo points...";
+    if (!validation) return "Validation unavailable";
+    if (validation.total === 0) return "No polygon validation result";
+    if (validation.failed.length === 0) {
+      return `Validated ${validation.passed}/${validation.total} demo points inside Salitran IV`;
+    }
+    return `${validation.failed.length} point(s) need review`;
+  }, [validation, validationLoading]);
 
   return (
     <div className="space-y-6">
@@ -33,26 +109,47 @@ export default function SalitranIVSimPage() {
           </h1>
         </div>
 
-        <p className="max-w-3xl text-sm text-gray-300">
-          This Phase 1 page is the simulation launcher shell. It forces the
-          barangay filter to{" "}
-          <span className="font-medium text-violet-200">
-            {SALITRAN_IV_NAME}
-          </span>
-          , then sends you to the Dashboard as the main visual stage.
+        <p className="max-w-4xl text-sm text-gray-300">
+          Phase 2 adds the curated local data pack for the Salitran IV demo:
+          fixed incident coordinates, realistic mock requesters, responder
+          staging points, and a designated primary evac setup. Everything here
+          is hardcoded client-side for speed and zero added cost.
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-violet-100/80">
-          <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1">
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1 text-violet-100/80">
             <MapPin className="h-3 w-3" />
             Fixed barangay: {SALITRAN_IV_NAME}
           </span>
-          <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1">
-            Cost: client-side only
+          <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1 text-violet-100/80">
+            Cost: zero new backend calls
           </span>
-          <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1">
-            No backend seeding yet
+          <span className="rounded-full border border-violet-400/20 bg-violet-950/40 px-2.5 py-1 text-violet-100/80">
+            Hardcoded Phase 2 demo data
           </span>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-gray-800 bg-gray-950/60 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-emerald-300" />
+            <span className="text-sm font-medium text-white">
+              Polygon validation
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-gray-400">{validationSummary}</p>
+
+          {!validationLoading && validation && validation.failed.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {validation.failed.map((item) => (
+                <div
+                  key={`${item.scenarioId}-${item.label}-${item.kind}`}
+                  className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200"
+                >
+                  {item.kind.toUpperCase()} · {item.label} · {item.scenarioId}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -65,7 +162,7 @@ export default function SalitranIVSimPage() {
               key={scenario.id}
               className="rounded-2xl border border-gray-800 bg-gray-900 p-5"
             >
-              <div className="mb-3">
+              <div className="mb-4">
                 <h2 className="text-base font-semibold text-white">
                   {scenario.title}
                 </h2>
@@ -76,9 +173,38 @@ export default function SalitranIVSimPage() {
 
               <p className="mb-4 text-sm text-gray-300">{scenario.objective}</p>
 
+              <div className="mb-4 grid grid-cols-3 gap-3">
+                <div className="rounded-xl border border-gray-800 bg-gray-950/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                    Incidents
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {scenario.incidentSeeds.length}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-gray-800 bg-gray-950/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                    Responders
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {scenario.responderStaging.length}
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-gray-800 bg-gray-950/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                    Evac
+                  </p>
+                  <p className="mt-1 truncate text-sm font-semibold text-white">
+                    {scenario.primaryEvac.name}
+                  </p>
+                </div>
+              </div>
+
               <div className="mb-4">
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                  Phase 1 outcome
+                  Expected
                 </p>
                 <ul className="space-y-1.5 text-sm text-gray-400">
                   {scenario.expected.map((item) => (
@@ -88,6 +214,85 @@ export default function SalitranIVSimPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+
+              <div className="mb-4 rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <House className="h-4 w-4 text-teal-300" />
+                  <p className="text-sm font-medium text-white">Primary evac</p>
+                </div>
+                <p className="text-sm text-gray-200">
+                  {scenario.primaryEvac.name}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {scenario.primaryEvac.notes}
+                </p>
+              </div>
+
+              <div className="mb-4 rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <Users className="h-4 w-4 text-amber-300" />
+                  <p className="text-sm font-medium text-white">
+                    Responder staging
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {scenario.responderStaging.map((staging) => (
+                    <div
+                      key={`${scenario.id}-${staging.responderCode}`}
+                      className="rounded-lg border border-gray-800 bg-gray-900/70 px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-200">
+                            {staging.responderCode}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {staging.vehicleType}
+                          </p>
+                        </div>
+                        <span className="text-[11px] text-gray-500">
+                          {staging.label}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mb-5 rounded-xl border border-gray-800 bg-gray-950/60 p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <TriangleAlert className="h-4 w-4 text-red-300" />
+                  <p className="text-sm font-medium text-white">
+                    Fixed incident seeds
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {scenario.incidentSeeds.map((incident) => (
+                    <div
+                      key={`${scenario.id}-${incident.requesterName}-${incident.lat}-${incident.lng}`}
+                      className="rounded-lg border border-gray-800 bg-gray-900/70 px-3 py-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-200">
+                          {incident.requesterName}
+                        </p>
+                        <span className="rounded-full border border-gray-700 px-2 py-0.5 text-[10px] uppercase tracking-wider text-gray-400">
+                          {incident.severity}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-400">
+                        {incident.household} · {incident.peopleCount} person
+                        {incident.peopleCount > 1 ? "s" : ""}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {incident.message}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <button
