@@ -228,7 +228,7 @@ export function FloatingSimulationLogPanel() {
 
     return [...devMapped, ...clientMapped].sort(
       (a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
   }, [devLogs, clientLogs, session]);
 
@@ -254,10 +254,8 @@ export function FloatingSimulationLogPanel() {
     if (!scrollRef.current || collapsed) return;
 
     const el = scrollRef.current;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-
-    if (distanceFromBottom < 80) {
-      el.scrollTop = el.scrollHeight;
+    if (el.scrollTop < 80) {
+      el.scrollTop = 0;
     }
   }, [filteredLogs, collapsed]);
 

@@ -220,6 +220,24 @@ export function SalitranSimulationControls() {
                 const action = result?.result?.action ?? "unknown";
                 setLastAction(action);
                 setStatusText(`Manual step executed: ${action}`);
+
+                if (action === "accept" || action === "pickup") {
+                  updateSalitranSimulationSession({
+                    status: "running",
+                    speedPreset,
+                  });
+                  appendClientSimulationFeed({
+                    level: "INFO",
+                    event: "playback_started",
+                    title: "Playback Started",
+                    message:
+                      "Manual step primed the trip. Client-side movement is now running.",
+                  });
+                } else if (action === "dropoff" || action === "noop") {
+                  updateSalitranSimulationSession({ status: "complete" });
+                } else if (action === "blocked") {
+                  updateSalitranSimulationSession({ status: "blocked" });
+                }
               } finally {
                 setIsBusy(false);
                 await refreshState();

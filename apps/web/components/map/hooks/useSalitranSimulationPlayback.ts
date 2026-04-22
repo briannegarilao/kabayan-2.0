@@ -338,7 +338,7 @@ export function useSalitranSimulationPlayback(params: {
       }
 
       setFrame((v) => v + 1);
-    }, 250);
+    }, 2000);
 
     return () => {
       cancelled = true;

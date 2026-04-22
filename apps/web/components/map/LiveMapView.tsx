@@ -19,6 +19,7 @@ import { useSOSLayer } from "./hooks/useSOSLayer";
 import { useResponderLayer } from "./hooks/useResponderLayer";
 import { useEvacLayer } from "./hooks/useEvacLayer";
 import { useTripRouteLayer } from "./hooks/useTripRouteLayer";
+import { useSalitranSimulationPlayback } from "./hooks/useSalitranSimulationPlayback";
 import type { TabId } from "./types";
 
 export default function LiveMapView() {
@@ -88,6 +89,18 @@ export default function LiveMapView() {
     setActiveTrips,
   );
 
+  const { displayResponders } = useSalitranSimulationPlayback({
+    activeTrips,
+    responders,
+  });
+
+  const mapResponders = useMemo(() => {
+    if (!selectedBarangay) return displayResponders;
+    return displayResponders.filter((r) =>
+      matchesResponderBarangay(r, selectedBarangay),
+    );
+  }, [displayResponders, selectedBarangay]);
+
   useSOSLayer({
     incidents,
     showSOS,
@@ -101,7 +114,7 @@ export default function LiveMapView() {
   });
 
   useResponderLayer({
-    responders,
+    responders: mapResponders,
     showResponders,
     responderLayerRef,
     responderMarkersRef,
@@ -118,7 +131,7 @@ export default function LiveMapView() {
 
   useTripRouteLayer({
     activeTrips,
-    responders,
+    responders: mapResponders,
     showTrips,
     routeLayerRef,
     disposedRef,
@@ -253,8 +266,11 @@ export default function LiveMapView() {
         }}
         onFocusResponder={(id) => {
           const responder = responders.find((r) => r.id === id);
+          const simulatedResponder = displayResponders.find((r) => r.id === id);
           const coords = responder
-            ? parseLocation(responder.current_location)
+            ? parseLocation(
+                simulatedResponder?.current_location ?? responder.current_location,
+              )
             : null;
           if (coords) focusLocation(coords, id, "responders");
         }}
