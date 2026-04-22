@@ -148,7 +148,7 @@ export function LogPanel({
       <div
         ref={scrollerRef}
         onScroll={handleScroll}
-        className="max-h-[520px] space-y-2 overflow-y-auto rounded-lg border border-gray-800 bg-gray-950/40 p-3"
+        className="max-h-130 space-y-2 overflow-y-auto rounded-lg border border-gray-800 bg-gray-950/40 p-3"
       >
         {filteredLogs.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-800 p-4 text-sm text-gray-500">

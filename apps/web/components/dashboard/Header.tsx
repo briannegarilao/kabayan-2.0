@@ -1,4 +1,3 @@
-// apps/web/components/dashboard/Header.tsx
 "use client";
 
 import { usePathname } from "next/navigation";
@@ -14,10 +13,10 @@ interface UserProfile {
 }
 
 const pageTitles: Record<string, string> = {
-  "/dashboard": "Overview",
+  "/dashboard": "Dashboard",
   "/dashboard/incidents": "Incident Management",
   "/dashboard/responders": "Responder Tracking",
-  "/dashboard/map": "Live Map",
+  "/dashboard/map": "Dashboard",
   "/dashboard/analytics": "Analytics & Insights",
   "/dashboard/evacuation": "Evacuation Centers",
   "/dashboard/announcements": "Announcements",
@@ -37,9 +36,10 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
           second: "2-digit",
           hour12: true,
           timeZone: "Asia/Manila",
-        })
+        }),
       );
     }
+
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
@@ -52,6 +52,7 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
     setIsOnline(navigator.onLine);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -62,7 +63,6 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-gray-800 bg-gray-900/50 px-6 backdrop-blur-sm">
-      {/* Left: Page title */}
       <div>
         <h2 className="text-lg font-semibold text-white">{pageTitle}</h2>
         <p className="text-xs text-gray-500">
@@ -77,7 +77,6 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
         </p>
       </div>
 
-      {/* Right: barangay indicator + connection + clock */}
       <div className="flex items-center gap-4">
         <BarangayFilterIndicator />
 
@@ -88,7 +87,11 @@ export function Header({ userProfile }: { userProfile: UserProfile }) {
               : "bg-red-500/10 text-red-400"
           }`}
         >
-          {isOnline ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+          {isOnline ? (
+            <Wifi className="h-3 w-3" />
+          ) : (
+            <WifiOff className="h-3 w-3" />
+          )}
           {isOnline ? "Connected" : "Offline"}
         </div>
 

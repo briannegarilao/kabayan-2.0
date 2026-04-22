@@ -45,7 +45,7 @@ export function DebugSnapshotPanel({
         </div>
       </div>
 
-      <div className="max-h-[320px] overflow-auto rounded-lg border border-gray-800 bg-gray-950/40 p-3">
+      <div className="max-h-80 overflow-auto rounded-lg border border-gray-800 bg-gray-950/40 p-3">
         <pre className="text-[11px] leading-relaxed text-gray-300">
           {snapshot
             ? JSON.stringify(snapshot, null, 2)

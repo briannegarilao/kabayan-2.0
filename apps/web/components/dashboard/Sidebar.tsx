@@ -1,10 +1,8 @@
-// apps/web/components/dashboard/Sidebar.tsx
 "use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard,
   AlertTriangle,
   Users,
   BarChart3,
@@ -26,12 +24,10 @@ interface UserProfile {
   email: string;
 }
 
-// Regular nav items, always shown (for allowed roles).
 const navItems = [
-  { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Dashboard", href: "/dashboard", icon: MapIcon },
   { label: "Incidents", href: "/dashboard/incidents", icon: AlertTriangle },
   { label: "Responders", href: "/dashboard/responders", icon: Users },
-  { label: "Live Map", href: "/dashboard/map", icon: MapIcon },
   { label: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { label: "Evacuation", href: "/dashboard/evacuation", icon: Building2 },
   { label: "Announcements", href: "/dashboard/announcements", icon: Megaphone },
@@ -42,10 +38,6 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
   const router = useRouter();
   const supabase = createClient();
 
-  // Dev console visibility:
-  //  - Always visible when NODE_ENV === "development"
-  //  - In production, visible only to lgu_admin role
-  //    (barangay_officials don't see it — they can't use these bulk tools)
   const showDevConsole = isDevConsoleEnabledForClient(userProfile.role);
 
   async function handleSignOut() {
@@ -80,7 +72,7 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
           {navItems.map((item) => {
             const isActive =
               item.href === "/dashboard"
-                ? pathname === "/dashboard"
+                ? pathname === "/dashboard" || pathname === "/dashboard/map"
                 : pathname.startsWith(item.href);
 
             return (
@@ -94,7 +86,9 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
                 }`}
               >
                 <item.icon
-                  className={`h-[18px] w-[18px] ${isActive ? "text-blue-400" : "text-gray-500"}`}
+                  className={`h-[18px] w-[18px] ${
+                    isActive ? "text-blue-400" : "text-gray-500"
+                  }`}
                 />
                 {item.label}
                 {isActive && (
@@ -104,7 +98,6 @@ export function Sidebar({ userProfile }: { userProfile: UserProfile }) {
             );
           })}
 
-          {/* Dev Console — gated */}
           {showDevConsole && (
             <>
               <div className="my-3 border-t border-gray-800" />
