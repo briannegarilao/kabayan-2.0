@@ -1,7 +1,6 @@
-// apps/web/components/map/LiveMapView.tsx
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -9,350 +8,29 @@ import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import "leaflet.heat";
-import {
-  AlertTriangle,
-  Users,
-  Building2,
-  Flame,
-  Activity,
-  Search,
-  ExternalLink,
-  MapPin,
-} from "lucide-react";
 
 import { createClient } from "../../lib/supabase/client";
-import { MAP_CONFIG, SEVERITY_COLORS } from "../../lib/map-config";
+import { MAP_CONFIG } from "../../lib/map-config";
 import { parseLocation } from "../../lib/types";
 import { useBarangayFilter } from "../../lib/barangay-filter";
+import { matchesResponderBarangay } from "./barangay-utils";
+import { createSOSIcon, createResponderIcon, createEvacIcon } from "./icons";
+import { MapLegend } from "./MapLegend";
+import { MapSidePanel } from "./MapSidePanel";
+import { buildSOSPopup, buildResponderPopup, buildEvacPopup } from "./popups";
+import { addStyledRouteToLayer, tripColor } from "./route-styles";
+import type {
+  BarangaysGeoJSON,
+  BoundaryGeoJSON,
+  EvacCenter,
+  Responder,
+  SOSIncident,
+  TabId,
+  TripPlan,
+} from "./types";
 
 const supabase = createClient();
 
-// ── Types ────────────────────────────────────────────────────
-interface SOSIncident {
-  id: string;
-  barangay: string;
-  flood_severity: string | null;
-  status: string;
-  people_count: number | null;
-  message: string | null;
-  location: any;
-  created_at: string;
-}
-
-interface Responder {
-  id: string;
-  team_name: string | null;
-  vehicle_type: string | null;
-  is_available: boolean;
-  current_load: number | null;
-  max_capacity: number | null;
-  current_location: any;
-  last_location_update: string | null;
-  home_barangay: string | null;
-}
-
-interface EvacCenter {
-  id: string;
-  name: string;
-  barangay: string;
-  capacity: number | null;
-  current_occupancy: number;
-  is_open: boolean;
-  location: any;
-}
-
-interface TripPlan {
-  id: string;
-  responder_id: string;
-  status: string;
-  stops: any[];
-  route_geometry?: {
-    type: "LineString";
-    coordinates: [number, number][];
-  } | null;
-  route_distance_meters?: number | null;
-  route_duration_seconds?: number | null;
-}
-
-type TabId = "sos" | "responders" | "evacs";
-
-function normalizeBarangay(value: string | null | undefined) {
-  return value?.trim().toLowerCase() ?? null;
-}
-
-function matchesResponderBarangay(
-  responder: Pick<Responder, "home_barangay" | "team_name">,
-  selectedBarangay: string,
-) {
-  const target = normalizeBarangay(selectedBarangay);
-  if (!target) return true;
-
-  if (normalizeBarangay(responder.home_barangay) === target) {
-    return true;
-  }
-
-  return responder.team_name?.toLowerCase().includes(target) ?? false;
-}
-
-// ── Visual helpers ───────────────────────────────────────────
-function addStyledRouteToLayer(
-  layer: L.LayerGroup,
-  latlngs: [number, number][],
-  color: string,
-) {
-  const routeBack = L.polyline(latlngs, {
-    color: "#020617",
-    weight: 9,
-    opacity: 0.8,
-    lineCap: "round",
-    lineJoin: "round",
-  });
-
-  const routeFront = L.polyline(latlngs, {
-    color,
-    weight: 5,
-    opacity: 0.95,
-    dashArray: "10, 10",
-    lineCap: "round",
-    lineJoin: "round",
-  });
-
-  layer.addLayer(routeBack);
-  layer.addLayer(routeFront);
-}
-
-// ── Icon factories ────────────────────────────────────────────
-function createSOSIcon(
-  severity: string | null,
-  isCritical: boolean,
-): L.DivIcon {
-  const color =
-    SEVERITY_COLORS[severity || "pending"] || SEVERITY_COLORS.pending;
-
-  const halo =
-    severity === "critical"
-      ? "0 0 0 5px rgba(239,68,68,0.22), 0 0 20px rgba(239,68,68,0.55)"
-      : severity === "high"
-        ? "0 0 0 4px rgba(249,115,22,0.18), 0 0 16px rgba(249,115,22,0.45)"
-        : severity === "moderate"
-          ? "0 0 0 4px rgba(245,158,11,0.16), 0 0 14px rgba(245,158,11,0.35)"
-          : "0 0 0 4px rgba(34,197,94,0.14), 0 0 12px rgba(34,197,94,0.25)";
-
-  return L.divIcon({
-    className: "",
-    html: `
-      <div style="
-        width:28px;
-        height:28px;
-        border-radius:50%;
-        background:${color};
-        border:3px solid #ffffff;
-        box-shadow:${halo};
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        ${isCritical ? "animation:kabayan-pulse 1.35s infinite;" : ""}
-      ">
-        <div style="
-          width:8px;
-          height:8px;
-          border-radius:50%;
-          background:white;
-        "></div>
-      </div>
-    `,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-  });
-}
-
-function createResponderIcon(isAvailable: boolean): L.DivIcon {
-  const color = isAvailable ? "#22c55e" : "#f59e0b";
-
-  return L.divIcon({
-    className: "",
-    html: `
-      <div style="
-        width:28px;
-        height:28px;
-        border-radius:8px;
-        background:${color};
-        border:3px solid #ffffff;
-        box-shadow:0 0 0 4px ${isAvailable ? "rgba(34,197,94,0.16)" : "rgba(245,158,11,0.16)"}, 0 4px 12px rgba(0,0,0,0.45);
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        color:white;
-        font-weight:800;
-        font-size:12px;
-      ">R</div>
-    `,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-  });
-}
-
-function createEvacIcon(isOpen: boolean): L.DivIcon {
-  const color = isOpen ? "#0d9488" : "#475569";
-  const glow = isOpen
-    ? "0 0 0 4px rgba(20,184,166,0.14), 0 4px 12px rgba(0,0,0,0.45)"
-    : "0 0 0 4px rgba(100,116,139,0.14), 0 4px 12px rgba(0,0,0,0.45)";
-
-  return L.divIcon({
-    className: "",
-    html: `
-      <div style="
-        width:30px;
-        height:30px;
-        border-radius:8px;
-        background:${color};
-        border:3px solid #ffffff;
-        box-shadow:${glow};
-        display:flex;
-        align-items:center;
-        justify-content:center;
-      ">
-        <div style="position:relative;width:14px;height:14px;">
-          <div style="
-            position:absolute;
-            left:5px;
-            top:0;
-            width:4px;
-            height:14px;
-            background:white;
-            border-radius:2px;
-          "></div>
-          <div style="
-            position:absolute;
-            left:0;
-            top:5px;
-            width:14px;
-            height:4px;
-            background:white;
-            border-radius:2px;
-          "></div>
-        </div>
-      </div>
-    `,
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-  });
-}
-
-// ── Popup builders ──────────────────────────────────────────
-function buildSOSPopup(inc: SOSIncident): HTMLElement {
-  const el = document.createElement("div");
-  el.style.minWidth = "220px";
-  const color = SEVERITY_COLORS[inc.flood_severity || "pending"];
-  el.innerHTML = `
-    <div style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;">
-      <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${inc.barangay}</div>
-      <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
-        <span style="padding:1px 8px;border-radius:9999px;font-size:11px;font-weight:600;background:${color}22;color:${color};">
-          ${inc.flood_severity || "Assessing..."}
-        </span>
-        <span style="padding:1px 8px;border-radius:9999px;font-size:11px;font-weight:600;background:#374151;color:#d1d5db;">
-          ${inc.status.replace("_", " ")}
-        </span>
-      </div>
-      <div style="color:#9ca3af;margin-bottom:4px;">
-        <strong>${inc.people_count ?? 1}</strong> ${(inc.people_count ?? 1) === 1 ? "person" : "people"}
-      </div>
-      ${inc.message ? `<div style="color:#9ca3af;font-style:italic;margin-bottom:4px;">"${inc.message}"</div>` : ""}
-      <div style="color:#6b7280;font-size:11px;">
-        ${new Date(inc.created_at).toLocaleString("en-PH", {
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
-      </div>
-    </div>`;
-  return el;
-}
-
-function buildResponderPopup(r: Responder): HTMLElement {
-  const el = document.createElement("div");
-  el.style.minWidth = "200px";
-  const loadPct =
-    r.max_capacity && r.max_capacity > 0
-      ? Math.round(((r.current_load ?? 0) / r.max_capacity) * 100)
-      : 0;
-  const statusColor = r.is_available ? "#22c55e" : "#f59e0b";
-  el.innerHTML = `
-    <div style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;">
-      <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${r.team_name || "Responder"}</div>
-      <div style="color:#9ca3af;margin-bottom:4px;">${r.vehicle_type || "—"}</div>
-      ${r.home_barangay ? `<div style="color:#9ca3af;margin-bottom:4px;font-size:11px;">Home: ${r.home_barangay}</div>` : ""}
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
-        <span style="width:8px;height:8px;border-radius:50%;background:${statusColor};"></span>
-        <span style="color:${statusColor};font-weight:600;font-size:11px;">${r.is_available ? "Available" : "On Trip"}</span>
-      </div>
-      <div style="color:#9ca3af;font-size:12px;">
-        Load: <strong>${r.current_load ?? 0}/${r.max_capacity ?? 0}</strong> (${loadPct}%)
-      </div>
-    </div>`;
-  return el;
-}
-
-function buildEvacPopup(e: EvacCenter): HTMLElement {
-  const el = document.createElement("div");
-  el.style.minWidth = "200px";
-  const capacity = e.capacity ?? 0;
-  const occPct =
-    capacity > 0 ? Math.round((e.current_occupancy / capacity) * 100) : 0;
-  const statusColor = e.is_open ? "#14b8a6" : "#64748b";
-  el.innerHTML = `
-    <div style="font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;">
-      <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${e.name}</div>
-      <div style="color:#9ca3af;margin-bottom:4px;">${e.barangay}</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">
-        <span style="width:8px;height:8px;border-radius:50%;background:${statusColor};"></span>
-        <span style="color:${statusColor};font-weight:600;font-size:11px;">${e.is_open ? "OPEN" : "Closed"}</span>
-      </div>
-      ${
-        capacity > 0
-          ? `<div style="color:#9ca3af;font-size:12px;">
-        Occupancy: <strong>${e.current_occupancy}/${capacity}</strong> (${occPct}%)
-      </div>`
-          : ""
-      }
-    </div>`;
-  return el;
-}
-
-const TRIP_COLORS = [
-  "#f59e0b",
-  "#3b82f6",
-  "#8b5cf6",
-  "#ec4899",
-  "#06b6d4",
-  "#14b8a6",
-];
-
-function tripColor(responderId: string): string {
-  const hash =
-    responderId.charCodeAt(0) + responderId.charCodeAt(responderId.length - 1);
-  return TRIP_COLORS[hash % TRIP_COLORS.length];
-}
-
-// ── GeoJSON types ─────────────────────────────────────────────
-interface BoundaryGeoJSON {
-  type: "Feature";
-  properties: { name: string };
-  geometry: { type: "Polygon"; coordinates: number[][][] };
-}
-
-interface BarangaysGeoJSON {
-  type: "FeatureCollection";
-  features: Array<{
-    type: "Feature";
-    properties: { name: string; osm_name?: string };
-    geometry: { type: "Polygon"; coordinates: number[][][] };
-  }>;
-}
-
-// ═══════════════════════════════════════════════════════════════
 export default function LiveMapView() {
   const router = useRouter();
   const { selectedBarangay } = useBarangayFilter();
@@ -526,6 +204,7 @@ export default function LiveMapView() {
 
     const dasmaRing: [number, number][] =
       cityBoundary.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]);
+
     const worldRing: [number, number][] = [
       [14.1, 120.6],
       [14.1, 121.3],
@@ -590,6 +269,7 @@ export default function LiveMapView() {
 
     return () => {
       if (disposedRef.current) return;
+
       if (maskLayerRef.current && map.hasLayer(maskLayerRef.current)) {
         map.removeLayer(maskLayerRef.current);
       }
@@ -605,6 +285,7 @@ export default function LiveMapView() {
       ) {
         map.removeLayer(barangaysLayerRef.current);
       }
+
       maskLayerRef.current = null;
       cityGlowRef.current = null;
       cityOutlineRef.current = null;
@@ -1047,7 +728,6 @@ export default function LiveMapView() {
     }
   }, [activeTrips, responders, showTrips]);
 
-  // ── List handlers ───────────────────────────────────────────
   function focusLocation(
     coords: [number, number],
     markerKey: string,
@@ -1088,7 +768,6 @@ export default function LiveMapView() {
     }
   }
 
-  // ── Derived filtered lists ──────────────────────────────────
   const filteredIncidents = useMemo(() => {
     const base = incidents.filter((i) => {
       if (sosStatusFilter === "active") {
@@ -1137,255 +816,61 @@ export default function LiveMapView() {
     );
   }, [evacCenters, listSearch]);
 
-  const activeCounts = {
-    sos: filteredIncidents.length,
-    responders: filteredResponders.length,
-    evacs: filteredEvacs.length,
-  };
-
   return (
     <div className="relative h-full w-full bg-gray-950">
       <div ref={containerRef} className="h-full w-full" />
 
-      <div className="absolute bottom-4 right-4 z-[1000] rounded-xl border border-gray-800 bg-gray-900/95 px-3 py-2 shadow-2xl backdrop-blur">
-        <div className="flex items-center gap-3 text-[10px] text-gray-400">
-          <span className="text-gray-500">Severity:</span>
-          <div className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#22c55e]" /> Low
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#f59e0b]" /> Moderate
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#f97316]" /> High
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-[#ef4444]" /> Critical
-          </div>
-        </div>
-      </div>
+      <MapLegend />
 
-      <div className="absolute left-4 top-4 bottom-4 z-[1000] flex w-80 flex-col overflow-hidden rounded-xl border border-gray-800 bg-gray-900/95 shadow-2xl backdrop-blur">
-        <div className="border-b border-gray-800 p-4">
-          {selectedBarangay && (
-            <div className="mb-3 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-600/10 px-2.5 py-1.5 text-xs text-blue-300">
-              <MapPin className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">Focused: {selectedBarangay}</span>
-            </div>
-          )}
-
-          <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-            Map Layers
-          </h3>
-
-          <div className="space-y-2.5">
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={showSOS}
-                onChange={(e) => setShowSOS(e.target.checked)}
-                className="h-4 w-4 rounded accent-red-500"
-              />
-              <AlertTriangle className="h-4 w-4 text-red-400" />
-              <span>SOS Incidents</span>
-              <span className="ml-auto text-[10px] text-gray-500">
-                {activeCounts.sos}
-              </span>
-            </label>
-
-            {showSOS && (
-              <div className="ml-6">
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-400">
-                  <input
-                    type="checkbox"
-                    checked={heatmapMode}
-                    onChange={(e) => setHeatmapMode(e.target.checked)}
-                    className="h-3 w-3 rounded accent-orange-500"
-                  />
-                  <Flame className="h-3 w-3 text-orange-400" />
-                  Heatmap mode
-                </label>
-              </div>
-            )}
-
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={showResponders}
-                onChange={(e) => setShowResponders(e.target.checked)}
-                className="h-4 w-4 rounded accent-amber-500"
-              />
-              <Users className="h-4 w-4 text-amber-400" />
-              <span>Responders</span>
-              <span className="ml-auto text-[10px] text-gray-500">
-                {responders.length}
-              </span>
-            </label>
-
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={showEvacs}
-                onChange={(e) => setShowEvacs(e.target.checked)}
-                className="h-4 w-4 rounded accent-teal-500"
-              />
-              <Building2 className="h-4 w-4 text-teal-400" />
-              <span>Evac Centers</span>
-              <span className="ml-auto text-[10px] text-gray-500">
-                {evacCenters.length}
-              </span>
-            </label>
-
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={showTrips}
-                onChange={(e) => setShowTrips(e.target.checked)}
-                className="h-4 w-4 rounded accent-purple-500"
-              />
-              <Activity className="h-4 w-4 text-purple-400" />
-              <span>Active Routes</span>
-              <span className="ml-auto text-[10px] text-gray-500">
-                {activeTrips.length}
-              </span>
-            </label>
-
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={showBarangays}
-                onChange={(e) => setShowBarangays(e.target.checked)}
-                className="h-4 w-4 rounded accent-slate-500"
-              />
-              <MapPin className="h-4 w-4 text-slate-400" />
-              <span>Barangay Outlines</span>
-              <span className="ml-auto text-[10px] text-gray-500">
-                {barangays?.features.length ?? "—"}
-              </span>
-            </label>
-          </div>
-
-          {showSOS && (
-            <div className="mt-3 border-t border-gray-800 pt-3">
-              <label className="mb-1 block text-[10px] uppercase tracking-wider text-gray-500">
-                SOS Status
-              </label>
-              <select
-                value={sosStatusFilter}
-                onChange={(e) => setSosStatusFilter(e.target.value)}
-                className="w-full rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-blue-500"
-              >
-                <option value="active">
-                  Active (pending/assigned/in progress)
-                </option>
-                <option value="pending">Pending only</option>
-                <option value="assigned">Assigned only</option>
-                <option value="in_progress">In Progress only</option>
-                <option value="all">All (including resolved)</option>
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex border-b border-gray-800">
-            <TabButton
-              active={activeTab === "sos"}
-              onClick={() => setActiveTab("sos")}
-              label="SOS"
-              count={activeCounts.sos}
-              color="text-red-400"
-            />
-            <TabButton
-              active={activeTab === "responders"}
-              onClick={() => setActiveTab("responders")}
-              label="Responders"
-              count={activeCounts.responders}
-              color="text-amber-400"
-            />
-            <TabButton
-              active={activeTab === "evacs"}
-              onClick={() => setActiveTab("evacs")}
-              label="Evacs"
-              count={activeCounts.evacs}
-              color="text-teal-400"
-            />
-          </div>
-
-          <div className="relative border-b border-gray-800 p-2">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
-            <input
-              type="text"
-              value={listSearch}
-              onChange={(e) => setListSearch(e.target.value)}
-              placeholder="Search..."
-              className="w-full rounded-md border border-gray-700 bg-gray-800 py-1.5 pl-8 pr-3 text-xs text-gray-200 placeholder-gray-500 outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {activeTab === "sos" &&
-              (filteredIncidents.length === 0 ? (
-                <EmptyState message="No SOS incidents" />
-              ) : (
-                <ul className="divide-y divide-gray-800">
-                  {filteredIncidents.map((inc) => (
-                    <SOSListItem
-                      key={inc.id}
-                      incident={inc}
-                      highlighted={highlightedId === inc.id}
-                      onFocus={() => {
-                        const coords = parseLocation(inc.location);
-                        if (coords) focusLocation(coords, inc.id, "sos");
-                      }}
-                      onViewDetails={() => viewDetails("sos", inc.id)}
-                    />
-                  ))}
-                </ul>
-              ))}
-
-            {activeTab === "responders" &&
-              (filteredResponders.length === 0 ? (
-                <EmptyState message="No responders" />
-              ) : (
-                <ul className="divide-y divide-gray-800">
-                  {filteredResponders.map((r) => (
-                    <ResponderListItem
-                      key={r.id}
-                      responder={r}
-                      highlighted={highlightedId === r.id}
-                      onFocus={() => {
-                        const coords = parseLocation(r.current_location);
-                        if (coords) focusLocation(coords, r.id, "responders");
-                      }}
-                      onViewDetails={() => viewDetails("responders", r.id)}
-                    />
-                  ))}
-                </ul>
-              ))}
-
-            {activeTab === "evacs" &&
-              (filteredEvacs.length === 0 ? (
-                <EmptyState message="No evacuation centers" />
-              ) : (
-                <ul className="divide-y divide-gray-800">
-                  {filteredEvacs.map((e) => (
-                    <EvacListItem
-                      key={e.id}
-                      evac={e}
-                      highlighted={highlightedId === e.id}
-                      onFocus={() => {
-                        const coords = parseLocation(e.location);
-                        if (coords) focusLocation(coords, e.id, "evacs");
-                      }}
-                      onViewDetails={() => viewDetails("evacs", e.id)}
-                    />
-                  ))}
-                </ul>
-              ))}
-          </div>
-        </div>
-      </div>
+      <MapSidePanel
+        selectedBarangay={selectedBarangay}
+        showSOS={showSOS}
+        setShowSOS={setShowSOS}
+        showResponders={showResponders}
+        setShowResponders={setShowResponders}
+        showEvacs={showEvacs}
+        setShowEvacs={setShowEvacs}
+        showTrips={showTrips}
+        setShowTrips={setShowTrips}
+        showBarangays={showBarangays}
+        setShowBarangays={setShowBarangays}
+        heatmapMode={heatmapMode}
+        setHeatmapMode={setHeatmapMode}
+        sosStatusFilter={sosStatusFilter}
+        setSosStatusFilter={setSosStatusFilter}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        listSearch={listSearch}
+        setListSearch={setListSearch}
+        filteredIncidents={filteredIncidents}
+        filteredResponders={filteredResponders}
+        filteredEvacs={filteredEvacs}
+        respondersCount={responders.length}
+        evacCentersCount={evacCenters.length}
+        activeTripsCount={activeTrips.length}
+        barangayFeatureCount={barangays?.features.length ?? "—"}
+        highlightedId={highlightedId}
+        onFocusSOS={(id) => {
+          const inc = incidents.find((i) => i.id === id);
+          const coords = inc ? parseLocation(inc.location) : null;
+          if (coords) focusLocation(coords, id, "sos");
+        }}
+        onFocusResponder={(id) => {
+          const responder = responders.find((r) => r.id === id);
+          const coords = responder
+            ? parseLocation(responder.current_location)
+            : null;
+          if (coords) focusLocation(coords, id, "responders");
+        }}
+        onFocusEvac={(id) => {
+          const evac = evacCenters.find((e) => e.id === id);
+          const coords = evac ? parseLocation(evac.location) : null;
+          if (coords) focusLocation(coords, id, "evacs");
+        }}
+        onViewSOS={(id) => viewDetails("sos", id)}
+        onViewResponder={(id) => viewDetails("responders", id)}
+        onViewEvac={(id) => viewDetails("evacs", id)}
+      />
 
       <style jsx global>{`
         @keyframes kabayan-pulse {
@@ -1401,228 +886,5 @@ export default function LiveMapView() {
         }
       `}</style>
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  label,
-  count,
-  color,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count: number;
-  color: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex-1 border-b-2 px-2 py-2.5 text-xs font-medium transition-colors ${
-        active
-          ? `border-blue-500 ${color}`
-          : "border-transparent text-gray-500 hover:text-gray-300"
-      }`}
-    >
-      {label}
-      <span className="ml-1 text-[10px] text-gray-500">({count})</span>
-    </button>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex h-40 flex-col items-center justify-center px-4 text-center">
-      <MapPin className="mb-2 h-6 w-6 text-gray-700" />
-      <p className="text-xs text-gray-500">{message}</p>
-    </div>
-  );
-}
-
-function SOSListItem({
-  incident,
-  highlighted,
-  onFocus,
-  onViewDetails,
-}: {
-  incident: SOSIncident;
-  highlighted: boolean;
-  onFocus: () => void;
-  onViewDetails: () => void;
-}) {
-  const color = SEVERITY_COLORS[incident.flood_severity || "pending"];
-
-  return (
-    <li
-      className={`group transition-colors ${
-        highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"
-      }`}
-    >
-      <div className="flex items-start gap-2 p-2.5">
-        <button
-          onClick={onFocus}
-          className="flex flex-1 items-start gap-2 text-left"
-        >
-          <span
-            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-            style={{ backgroundColor: color }}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium text-gray-200">
-              {incident.barangay}
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-500">
-              <span className="capitalize">
-                {incident.flood_severity || "assessing"}
-              </span>
-              <span>•</span>
-              <span>{incident.status.replace("_", " ")}</span>
-              <span>•</span>
-              <span>{incident.people_count ?? 1}p</span>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={onViewDetails}
-          title="View details"
-          className="shrink-0 rounded p-1 text-gray-500 opacity-0 transition-all hover:bg-gray-700 hover:text-gray-200 group-hover:opacity-100"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </li>
-  );
-}
-
-function ResponderListItem({
-  responder,
-  highlighted,
-  onFocus,
-  onViewDetails,
-}: {
-  responder: Responder;
-  highlighted: boolean;
-  onFocus: () => void;
-  onViewDetails: () => void;
-}) {
-  const color = responder.is_available ? "#22c55e" : "#f59e0b";
-  const loadPct =
-    responder.max_capacity && responder.max_capacity > 0
-      ? Math.round(
-          ((responder.current_load ?? 0) / responder.max_capacity) * 100,
-        )
-      : 0;
-
-  return (
-    <li
-      className={`group transition-colors ${
-        highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"
-      }`}
-    >
-      <div className="flex items-start gap-2 p-2.5">
-        <button
-          onClick={onFocus}
-          className="flex flex-1 items-start gap-2 text-left"
-        >
-          <span
-            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-            style={{ backgroundColor: color }}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium text-gray-200">
-              {responder.team_name || "Responder"}
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-500">
-              <span>{responder.vehicle_type || "—"}</span>
-              <span>•</span>
-              <span>{responder.is_available ? "Available" : "On Trip"}</span>
-              <span>•</span>
-              <span>Load {loadPct}%</span>
-            </div>
-            {responder.home_barangay && (
-              <div className="mt-0.5 text-[10px] text-gray-600">
-                {responder.home_barangay}
-              </div>
-            )}
-          </div>
-        </button>
-
-        <button
-          onClick={onViewDetails}
-          title="View details"
-          className="shrink-0 rounded p-1 text-gray-500 opacity-0 transition-all hover:bg-gray-700 hover:text-gray-200 group-hover:opacity-100"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </li>
-  );
-}
-
-function EvacListItem({
-  evac,
-  highlighted,
-  onFocus,
-  onViewDetails,
-}: {
-  evac: EvacCenter;
-  highlighted: boolean;
-  onFocus: () => void;
-  onViewDetails: () => void;
-}) {
-  const color = evac.is_open ? "#14b8a6" : "#64748b";
-  const capacity = evac.capacity ?? 0;
-
-  return (
-    <li
-      className={`group transition-colors ${
-        highlighted ? "bg-blue-600/10" : "hover:bg-gray-800/50"
-      }`}
-    >
-      <div className="flex items-start gap-2 p-2.5">
-        <button
-          onClick={onFocus}
-          className="flex flex-1 items-start gap-2 text-left"
-        >
-          <span
-            className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-            style={{ backgroundColor: color }}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium text-gray-200">
-              {evac.name}
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-500">
-              <span className="truncate">{evac.barangay}</span>
-              <span>•</span>
-              <span
-                className={evac.is_open ? "text-teal-400" : "text-gray-500"}
-              >
-                {evac.is_open ? "OPEN" : "Closed"}
-              </span>
-              {capacity > 0 && (
-                <>
-                  <span>•</span>
-                  <span>
-                    {evac.current_occupancy}/{capacity}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={onViewDetails}
-          title="View details"
-          className="shrink-0 rounded p-1 text-gray-500 opacity-0 transition-all hover:bg-gray-700 hover:text-gray-200 group-hover:opacity-100"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </li>
   );
 }
