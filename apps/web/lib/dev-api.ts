@@ -216,3 +216,11 @@ export async function postSimulationAutoRun(payload?: {
   });
   return parseJsonOrThrow(response);
 }
+
+export async function getDevDebugSnapshot() {
+  const response = await fetch(`${API_BASE_URL}/api/dev/debug/snapshot`, {
+    method: "GET",
+    cache: "no-store",
+  });
+  return parseJsonOrThrow(response);
+}

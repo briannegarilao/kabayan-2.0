@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { createClient } from "../../../lib/supabase/client";
 import { isDevConsoleEnabledForClient } from "../../../lib/dev-console";
 import {
+  getDevDebugSnapshot,
   getDevHealth,
   getDevLogs,
   getDevScenarios,
@@ -17,6 +18,8 @@ import {
   postForceResponderStatus,
   postRunDevScenario,
   postSeedSOS,
+  postSimulationAdvance,
+  postSimulationAutoRun,
   postTripAccept,
   postTripDecline,
   postTripDropoff,
@@ -32,16 +35,15 @@ import { ManualSOSForm } from "../../../components/dev/ManualSOSForm";
 import { ResponderControlPanel } from "../../../components/dev/ResponderControlPanel";
 import { TripControlPanel } from "../../../components/dev/TripControlPanel";
 import { ScenarioRunnerPanel } from "../../../components/dev/ScenarioRunnerPanel";
+import { SimulationRunnerPanel } from "../../../components/dev/SimulationRunnerPanel";
+import { OperationalSafetyPanel } from "../../../components/dev/OperationalSafetyPanel";
+import { ValidationChecklistPanel } from "../../../components/dev/ValidationChecklistPanel";
+import { DebugSnapshotPanel } from "../../../components/dev/DebugSnapshotPanel";
 import {
   DevUILog,
   LogFilter,
   LogPanel,
 } from "../../../components/dev/LogPanel";
-import {
-  postSimulationAdvance,
-  postSimulationAutoRun,
-} from "../../../lib/dev-api";
-import { SimulationRunnerPanel } from "../../../components/dev/SimulationRunnerPanel";
 
 const supabase = createClient();
 
@@ -205,6 +207,12 @@ export default function DevConsolePage() {
     Record<string, "setup_only" | "setup_and_trigger" | "full_run">
   >({});
 
+  const [debugSnapshot, setDebugSnapshot] = useState<any | null>(null);
+  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+  const [validationChecks, setValidationChecks] = useState<
+    Record<string, boolean>
+  >({});
+
   const [backendLogs, setBackendLogs] = useState<DevUILog[]>([]);
   const [realtimeLogs, setRealtimeLogs] = useState<DevUILog[]>([]);
   const [paused, setPaused] = useState(false);
@@ -314,6 +322,21 @@ export default function DevConsolePage() {
     }
   }, []);
 
+  const refreshDebugSnapshot = useCallback(async () => {
+    setLoadingSnapshot(true);
+    try {
+      const res = await getDevDebugSnapshot();
+      setDebugSnapshot(res?.snapshot ?? null);
+    } catch (error: any) {
+      setResult({
+        type: "err",
+        msg: `Debug snapshot failed: ${error.message}`,
+      });
+    } finally {
+      setLoadingSnapshot(false);
+    }
+  }, []);
+
   const fetchBackendLogs = useCallback(async () => {
     try {
       const logRes = await getDevLogs({ n: 200 });
@@ -335,14 +358,16 @@ export default function DevConsolePage() {
       refreshBackend();
       refreshDevState();
       refreshScenarioCatalog();
+      refreshDebugSnapshot();
       fetchBackendLogs();
     }
   }, [
     allowed,
+    refreshEvacSummary,
     refreshBackend,
     refreshDevState,
-    refreshEvacSummary,
     refreshScenarioCatalog,
+    refreshDebugSnapshot,
     fetchBackendLogs,
   ]);
 
@@ -384,8 +409,8 @@ export default function DevConsolePage() {
       };
 
       setRealtimeLogs((prev) => [...prev, entry].slice(-200));
-      refreshDevState();
       refreshBackend();
+      refreshDevState();
     }
 
     const channel = supabase
@@ -448,8 +473,9 @@ export default function DevConsolePage() {
       msg: `Opened ${count ?? "all"} previously-closed centers.`,
     });
 
-    refreshEvacSummary();
-    refreshBackend();
+    await refreshEvacSummary();
+    await refreshBackend();
+    await refreshDebugSnapshot();
   }
 
   async function bulkCloseAllEvacs() {
@@ -481,8 +507,9 @@ export default function DevConsolePage() {
       msg: `Closed ${count ?? "all"} previously-open centers and reset occupancy.`,
     });
 
-    refreshEvacSummary();
-    refreshBackend();
+    await refreshEvacSummary();
+    await refreshBackend();
+    await refreshDebugSnapshot();
   }
 
   async function resetAllOccupancy() {
@@ -510,8 +537,9 @@ export default function DevConsolePage() {
       msg: `Reset ${count ?? "all"} centers to 0 occupancy.`,
     });
 
-    refreshEvacSummary();
-    refreshBackend();
+    await refreshEvacSummary();
+    await refreshBackend();
+    await refreshDebugSnapshot();
   }
 
   async function handleSoftReset() {
@@ -532,6 +560,7 @@ export default function DevConsolePage() {
       await refreshBackend();
       await refreshEvacSummary();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Soft reset failed: ${error.message}` });
@@ -558,6 +587,7 @@ export default function DevConsolePage() {
       await refreshBackend();
       await refreshEvacSummary();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Full reset failed: ${error.message}` });
@@ -590,6 +620,7 @@ export default function DevConsolePage() {
       await refreshBackend();
       await refreshEvacSummary();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Seed single failed: ${error.message}` });
@@ -622,6 +653,7 @@ export default function DevConsolePage() {
       await refreshBackend();
       await refreshEvacSummary();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Seed cluster failed: ${error.message}` });
@@ -639,6 +671,7 @@ export default function DevConsolePage() {
       setResult({ type: "ok", msg: "Manual simulated SOS created." });
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Manual SOS failed: ${error.message}` });
@@ -656,6 +689,7 @@ export default function DevConsolePage() {
       setResult({ type: "ok", msg: "Responder override applied." });
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({
@@ -676,6 +710,7 @@ export default function DevConsolePage() {
       setResult({ type: "ok", msg: `Trip ${tripId} accepted.` });
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Trip accept failed: ${error.message}` });
@@ -697,6 +732,7 @@ export default function DevConsolePage() {
       setResult({ type: "ok", msg: `Trip ${payload.tripId} declined.` });
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Trip decline failed: ${error.message}` });
@@ -721,6 +757,7 @@ export default function DevConsolePage() {
       });
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Pickup failed: ${error.message}` });
@@ -738,6 +775,7 @@ export default function DevConsolePage() {
       setResult({ type: "ok", msg: `Dropoff recorded for trip ${tripId}.` });
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Dropoff failed: ${error.message}` });
@@ -757,6 +795,7 @@ export default function DevConsolePage() {
       setResult({ type: "ok", msg: "Active simulated trips cleared." });
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({ type: "err", msg: `Trip clear failed: ${error.message}` });
@@ -806,6 +845,7 @@ export default function DevConsolePage() {
       await refreshBackend();
       await refreshDevState();
       await refreshEvacSummary();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({
@@ -834,6 +874,7 @@ export default function DevConsolePage() {
 
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({
@@ -865,6 +906,7 @@ export default function DevConsolePage() {
 
       await refreshBackend();
       await refreshDevState();
+      await refreshDebugSnapshot();
       await fetchBackendLogs();
     } catch (error: any) {
       setResult({
@@ -873,6 +915,22 @@ export default function DevConsolePage() {
       });
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function handleCopySnapshot() {
+    try {
+      const payload = JSON.stringify(debugSnapshot ?? {}, null, 2);
+      await navigator.clipboard.writeText(payload);
+      setResult({
+        type: "ok",
+        msg: "Debug snapshot copied to clipboard.",
+      });
+    } catch (error: any) {
+      setResult({
+        type: "err",
+        msg: `Copy failed: ${error.message}`,
+      });
     }
   }
 
@@ -931,6 +989,11 @@ export default function DevConsolePage() {
       banner={banner}
       left={
         <>
+          <OperationalSafetyPanel
+            appEnv={health?.app_env}
+            devEnabled={health?.dev_console_enabled}
+          />
+
           <SimulationPanel
             busy={busy}
             onSeedSingle={handleSeedSingle}
@@ -990,6 +1053,7 @@ export default function DevConsolePage() {
             onRefresh={() => {
               refreshBackend();
               refreshDevState();
+              refreshDebugSnapshot();
             }}
           />
 
@@ -1029,6 +1093,18 @@ export default function DevConsolePage() {
               </div>
             </div>
           </div>
+
+          <ValidationChecklistPanel
+            checks={validationChecks}
+            setChecks={setValidationChecks}
+          />
+
+          <DebugSnapshotPanel
+            snapshot={debugSnapshot}
+            loading={loadingSnapshot}
+            onRefresh={refreshDebugSnapshot}
+            onCopy={handleCopySnapshot}
+          />
 
           <LogPanel
             logs={combinedLogs}

@@ -15,6 +15,8 @@ from services.dev_state import fetch_dev_active_state
 from services.dev_stats import fetch_dev_stats
 from services.supabase_client import get_supabase
 
+from services.dev_snapshot import build_dev_debug_snapshot
+
 router = APIRouter()
 
 
@@ -214,3 +216,10 @@ async def dev_simulation_auto_run(
         max_steps=payload.max_steps,
     )
     return {"success": True, "result": result}
+
+@router.get("/debug/snapshot")
+async def dev_debug_snapshot(
+    settings: Settings = Depends(require_dev_console_backend),
+):
+    snapshot = build_dev_debug_snapshot()
+    return {"snapshot": snapshot}
