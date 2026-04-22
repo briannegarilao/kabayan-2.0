@@ -1,3 +1,4 @@
+// apps/web/components/map/types.ts
 export interface SOSIncident {
   id: string;
   barangay: string;
@@ -42,6 +43,8 @@ export interface TripPlan {
   } | null;
   route_distance_meters?: number | null;
   route_duration_seconds?: number | null;
+  is_simulated?: boolean | null;
+  simulation_label?: string | null;
 }
 
 export type TabId = "sos" | "responders" | "evacs";

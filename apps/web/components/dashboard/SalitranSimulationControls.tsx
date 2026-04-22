@@ -1,7 +1,7 @@
 // apps/web/components/dashboard/SalitranSimulationControls.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   PauseCircle,
   PlayCircle,
@@ -19,12 +19,12 @@ import {
   type SalitranSpeedPreset,
 } from "../../lib/salitran-sim";
 import { getDevStateActive, postSimulationAdvance } from "../../lib/dev-api";
+import { appendClientSimulationFeed } from "../../lib/salitran-sim-feed";
 
 type SimTrip = {
   id: string;
   simulation_label?: string | null;
   is_simulated?: boolean;
-  created_at?: string;
 };
 
 type SimIncident = {
@@ -35,7 +35,6 @@ type SimIncident = {
 
 export function SalitranSimulationControls() {
   const [session, setSession] = useState<SalitranSimSession | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [activeTripCount, setActiveTripCount] = useState(0);
   const [activeIncidentCount, setActiveIncidentCount] = useState(0);
@@ -43,27 +42,17 @@ export function SalitranSimulationControls() {
   const [statusText, setStatusText] = useState<string>("No active simulation.");
   const [speedPreset, setSpeedPreset] = useState<SalitranSpeedPreset>("normal");
 
-  const timerRef = useRef<number | null>(null);
-
   useEffect(() => {
-    const stored = readSalitranSimulationSession();
-    setSession(stored);
+    const sync = () => {
+      const stored = readSalitranSimulationSession();
+      setSession(stored);
+      if (stored?.speedPreset) setSpeedPreset(stored.speedPreset);
+    };
 
-    if (stored?.speedPreset) setSpeedPreset(stored.speedPreset);
-
-    if (
-      stored?.runMode === "setup_and_trigger" &&
-      stored?.status !== "complete"
-    ) {
-      setIsRunning(stored.status === "running" || stored.status === "prepared");
-      setStatusText("Autoplay armed for this scenario.");
-    }
+    sync();
+    const interval = window.setInterval(sync, 500);
+    return () => window.clearInterval(interval);
   }, []);
-
-  const tickMs = useMemo(
-    () => (speedPreset === "fast" ? 1200 : 2500),
-    [speedPreset],
-  );
 
   const targetSimulationLabel = useMemo(() => {
     if (!session) return null;
@@ -76,17 +65,11 @@ export function SalitranSimulationControls() {
     const result = await getDevStateActive();
     const state = result?.state ?? {};
 
-    const activeTrips = ((state.active_trips ?? []) as SimTrip[])
-      .filter(
-        (trip) =>
-          trip?.is_simulated === true &&
-          trip?.simulation_label === targetSimulationLabel,
-      )
-      .sort((a, b) => {
-        const aTime = new Date(a.created_at ?? 0).getTime();
-        const bTime = new Date(b.created_at ?? 0).getTime();
-        return aTime - bTime;
-      });
+    const activeTrips = ((state.active_trips ?? []) as SimTrip[]).filter(
+      (trip) =>
+        trip?.is_simulated === true &&
+        trip?.simulation_label === targetSimulationLabel,
+    );
 
     const activeIncidents = (
       (state.active_incidents ?? []) as SimIncident[]
@@ -99,106 +82,22 @@ export function SalitranSimulationControls() {
     setActiveTripCount(activeTrips.length);
     setActiveIncidentCount(activeIncidents.length);
 
+    if (activeTrips.length === 0 && session.status === "running") {
+      updateSalitranSimulationSession({ status: "complete" });
+      setStatusText("No active simulated trips left. Scenario complete.");
+    }
+
     return { activeTrips, activeIncidents };
   }
-
-  function syncSessionPatch(patch: Partial<SalitranSimSession>) {
-    const next = updateSalitranSimulationSession(patch);
-    if (next) setSession(next);
-  }
-
-  async function advanceOneStep() {
-    if (!session || !targetSimulationLabel || isBusy) return;
-
-    setIsBusy(true);
-
-    try {
-      const snapshot = await refreshState();
-      const trip = snapshot?.activeTrips?.[0];
-
-      if (!trip) {
-        setStatusText(
-          "No active simulated trip found. Scenario appears complete.",
-        );
-        setLastAction("complete");
-        setIsRunning(false);
-        syncSessionPatch({ status: "complete", speedPreset });
-        return;
-      }
-
-      const result = await postSimulationAdvance({
-        trip_id: trip.id,
-        action: "auto_step",
-      });
-
-      const action = result?.result?.action ?? "unknown";
-      setLastAction(action);
-
-      if (action === "accept") {
-        setStatusText("Responder accepted the simulated trip.");
-        syncSessionPatch({ status: "running", speedPreset });
-      } else if (action === "pickup") {
-        setStatusText("Responder reached the next pickup checkpoint.");
-        syncSessionPatch({ status: "running", speedPreset });
-      } else if (action === "dropoff") {
-        setStatusText("Responder completed dropoff. Scenario complete.");
-        setIsRunning(false);
-        syncSessionPatch({ status: "complete", speedPreset });
-      } else if (action === "blocked") {
-        setStatusText(
-          "Simulation step was blocked by capacity or rule checks.",
-        );
-        setIsRunning(false);
-        syncSessionPatch({ status: "blocked", speedPreset });
-      } else if (action === "noop") {
-        setStatusText("No further simulated action was available.");
-        setIsRunning(false);
-        syncSessionPatch({ status: "complete", speedPreset });
-      } else {
-        setStatusText(`Last simulation action: ${action}`);
-      }
-
-      await refreshState();
-    } catch (error) {
-      setStatusText(
-        error instanceof Error
-          ? error.message
-          : "Failed to advance simulation step.",
-      );
-      setIsRunning(false);
-      syncSessionPatch({ status: "blocked", speedPreset });
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!session || !isRunning) return;
-
-    let cancelled = false;
-
-    async function loop() {
-      if (cancelled) return;
-      await advanceOneStep();
-      if (cancelled) return;
-      timerRef.current = window.setTimeout(loop, tickMs);
-    }
-
-    timerRef.current = window.setTimeout(loop, 800);
-
-    return () => {
-      cancelled = true;
-      if (timerRef.current) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [isRunning, session, tickMs]);
 
   useEffect(() => {
     if (!session) return;
     void refreshState();
-  }, [session]);
+    const interval = window.setInterval(() => {
+      void refreshState();
+    }, 2000);
+    return () => window.clearInterval(interval);
+  }, [session, targetSimulationLabel]);
 
   if (!session) {
     return (
@@ -210,6 +109,7 @@ export function SalitranSimulationControls() {
     );
   }
 
+  const isRunning = session.status === "running";
   const isComplete = session.status === "complete";
 
   return (
@@ -220,7 +120,7 @@ export function SalitranSimulationControls() {
             Salitran IV Simulation Controls
           </p>
           <p className="text-xs text-violet-100/75">
-            {session.scenarioTitle} · {session.runMode ?? "setup_only"}
+            {session.scenarioTitle} · smooth client-side playback
           </p>
         </div>
 
@@ -230,7 +130,14 @@ export function SalitranSimulationControls() {
             onChange={(e) => {
               const next = e.target.value as SalitranSpeedPreset;
               setSpeedPreset(next);
-              syncSessionPatch({ speedPreset: next });
+              updateSalitranSimulationSession({ speedPreset: next });
+
+              appendClientSimulationFeed({
+                level: "INFO",
+                event: "speed_changed",
+                title: "Playback Speed Updated",
+                message: `Simulation speed set to ${next}.`,
+              });
             }}
             className="rounded-lg border border-violet-400/20 bg-violet-950/40 px-3 py-2 text-xs font-medium text-violet-200 outline-none"
           >
@@ -240,10 +147,22 @@ export function SalitranSimulationControls() {
 
           <button
             onClick={() => {
-              setIsRunning(true);
-              syncSessionPatch({ status: "running", speedPreset });
+              updateSalitranSimulationSession({
+                status: "running",
+                speedPreset,
+              });
+              setStatusText(
+                "Client-side playback running. Backend writes happen only at checkpoints.",
+              );
+              appendClientSimulationFeed({
+                level: "INFO",
+                event: "playback_started",
+                title: "Playback Started",
+                message:
+                  "Client-side movement started. DB writes are checkpoint-based only.",
+              });
             }}
-            disabled={isRunning || isBusy || isComplete}
+            disabled={isBusy || isRunning || isComplete}
             className="inline-flex items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-950/40 px-3 py-2 text-xs font-medium text-violet-200 transition-colors hover:bg-violet-900/50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <PlayCircle className="h-4 w-4" />
@@ -252,8 +171,17 @@ export function SalitranSimulationControls() {
 
           <button
             onClick={() => {
-              setIsRunning(false);
-              syncSessionPatch({ status: "paused", speedPreset });
+              updateSalitranSimulationSession({
+                status: "paused",
+                speedPreset,
+              });
+              setStatusText("Playback paused.");
+              appendClientSimulationFeed({
+                level: "INFO",
+                event: "playback_paused",
+                title: "Playback Paused",
+                message: "Client-side movement has been paused.",
+              });
             }}
             disabled={!isRunning}
             className="inline-flex items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-950/40 px-3 py-2 text-xs font-medium text-violet-200 transition-colors hover:bg-violet-900/50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -263,7 +191,30 @@ export function SalitranSimulationControls() {
           </button>
 
           <button
-            onClick={() => void advanceOneStep()}
+            onClick={async () => {
+              if (!targetSimulationLabel) return;
+              setIsBusy(true);
+              try {
+                const snapshot = await refreshState();
+                const trip = snapshot?.activeTrips?.[0];
+                if (!trip) {
+                  setStatusText("No active simulated trip found.");
+                  return;
+                }
+
+                const result = await postSimulationAdvance({
+                  trip_id: trip.id,
+                  action: "auto_step",
+                });
+
+                const action = result?.result?.action ?? "unknown";
+                setLastAction(action);
+                setStatusText(`Manual step executed: ${action}`);
+              } finally {
+                setIsBusy(false);
+                await refreshState();
+              }
+            }}
             disabled={isBusy || isComplete}
             className="inline-flex items-center gap-2 rounded-lg border border-violet-400/20 bg-violet-950/40 px-3 py-2 text-xs font-medium text-violet-200 transition-colors hover:bg-violet-900/50 disabled:cursor-not-allowed disabled:opacity-60"
           >
@@ -333,6 +284,18 @@ export function SalitranSimulationControls() {
       <div className="mt-3 rounded-xl border border-gray-800 bg-gray-950/50 px-3 py-2">
         <p className="text-xs text-gray-300">{statusText}</p>
       </div>
+
+      {isComplete && (
+        <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-3">
+          <p className="text-sm font-semibold text-emerald-200">
+            Scenario complete
+          </p>
+          <p className="mt-1 text-xs text-emerald-100/80">
+            The trip finished using smooth client-side playback with checkpoint
+            commits.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+// apps/web/components/map/hooks/useLiveMapData.ts
 "use client";
 
 import { useEffect, useState } from "react";
@@ -48,7 +49,7 @@ export function useLiveMapData(
         supabase
           .from("trip_plans")
           .select(
-            "id, responder_id, status, stops, route_geometry, route_distance_meters, route_duration_seconds",
+            "id, responder_id, status, stops, route_geometry, route_distance_meters, route_duration_seconds, is_simulated, simulation_label",
           )
           .eq("status", "active"),
       ]);

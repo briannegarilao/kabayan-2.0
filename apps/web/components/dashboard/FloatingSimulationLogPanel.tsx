@@ -12,12 +12,17 @@ import {
   Truck,
   Wrench,
   XCircle,
+  PlayCircle,
 } from "lucide-react";
 import { getDevLogs } from "../../lib/dev-api";
 import {
   readSalitranSimulationSession,
   type SalitranSimSession,
 } from "../../lib/salitran-sim";
+import {
+  readClientSimulationFeed,
+  type ClientSimFeedEntry,
+} from "../../lib/salitran-sim-feed";
 
 type DevLogEntry = {
   timestamp: string;
@@ -36,13 +41,32 @@ type DevLogEntry = {
   metadata: Record<string, any>;
 };
 
-function getLogVisual(log: DevLogEntry) {
+type UnifiedLog = {
+  timestamp: string;
+  source: string;
+  level: string;
+  event: string;
+  message: string;
+  title?: string;
+  metadata?: Record<string, any>;
+};
+
+function getLogVisual(log: UnifiedLog) {
   if (log.level === "ERROR") {
     return {
       icon: XCircle,
       accent: "border-red-500/30 bg-red-500/10 text-red-200",
       iconColor: "text-red-300",
-      title: "Simulation Error",
+      title: log.title ?? "Simulation Error",
+    };
+  }
+
+  if (log.source === "CLIENT_SIM" && log.event.includes("movement")) {
+    return {
+      icon: Route,
+      accent: "border-violet-500/20 bg-violet-500/10 text-violet-100",
+      iconColor: "text-violet-300",
+      title: log.title ?? "Responder Moving",
     };
   }
 
@@ -73,39 +97,39 @@ function getLogVisual(log: DevLogEntry) {
     };
   }
 
-  if (log.event === "simulation_accept") {
-    return {
-      icon: Route,
-      accent: "border-violet-500/20 bg-violet-500/10 text-violet-100",
-      iconColor: "text-violet-300",
-      title: "Responder Accepted Trip",
-    };
-  }
-
-  if (log.event === "simulation_pickup") {
+  if (log.event.includes("pickup")) {
     return {
       icon: Truck,
       accent: "border-emerald-500/20 bg-emerald-500/10 text-emerald-100",
       iconColor: "text-emerald-300",
-      title: "Pickup Complete",
+      title: log.title ?? "Pickup Complete",
     };
   }
 
-  if (log.event === "simulation_dropoff") {
+  if (log.event.includes("dropoff")) {
     return {
       icon: CheckCircle2,
       accent: "border-teal-500/20 bg-teal-500/10 text-teal-100",
       iconColor: "text-teal-300",
-      title: "Dropoff Complete",
+      title: log.title ?? "Dropoff Complete",
     };
   }
 
-  if (log.source === "DEV") {
+  if (log.event.includes("playback")) {
+    return {
+      icon: PlayCircle,
+      accent: "border-violet-500/20 bg-violet-500/10 text-violet-100",
+      iconColor: "text-violet-300",
+      title: log.title ?? "Playback Update",
+    };
+  }
+
+  if (log.source === "DEV" || log.source === "CLIENT_SIM") {
     return {
       icon: Wrench,
       accent: "border-slate-500/20 bg-slate-500/10 text-slate-100",
       iconColor: "text-slate-300",
-      title: "Simulation System",
+      title: log.title ?? "Simulation System",
     };
   }
 
@@ -113,20 +137,33 @@ function getLogVisual(log: DevLogEntry) {
     icon: Route,
     accent: "border-violet-500/20 bg-violet-500/10 text-violet-100",
     iconColor: "text-violet-300",
-    title: log.event.replaceAll("_", " "),
+    title: log.title ?? log.event.replaceAll("_", " "),
   };
 }
 
 export function FloatingSimulationLogPanel() {
   const [session, setSession] = useState<SalitranSimSession | null>(null);
-  const [logs, setLogs] = useState<DevLogEntry[]>([]);
+  const [devLogs, setDevLogs] = useState<DevLogEntry[]>([]);
+  const [clientLogs, setClientLogs] = useState<ClientSimFeedEntry[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setSession(readSalitranSimulationSession());
+    const sync = () => setSession(readSalitranSimulationSession());
+    sync();
+
+    const interval = window.setInterval(sync, 500);
+    const onFeedUpdate = () => setClientLogs(readClientSimulationFeed());
+
+    window.addEventListener("kabayan:salitran-feed-updated", onFeedUpdate);
+    onFeedUpdate();
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("kabayan:salitran-feed-updated", onFeedUpdate);
+    };
   }, []);
 
   useEffect(() => {
@@ -138,7 +175,8 @@ export function FloatingSimulationLogPanel() {
       try {
         const res = await getDevLogs({ n: 200 });
         if (cancelled) return;
-        setLogs((res?.logs ?? []) as DevLogEntry[]);
+        setDevLogs((res?.logs ?? []) as DevLogEntry[]);
+        setClientLogs(readClientSimulationFeed());
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -153,26 +191,54 @@ export function FloatingSimulationLogPanel() {
     };
   }, [session]);
 
-  const filteredLogs = useMemo(() => {
+  const mergedLogs = useMemo(() => {
     if (!session) return [];
 
     const startedAt = new Date(session.startedAt).getTime();
     const allowedSources = new Set(["SIM", "ENGINE", "RESPONDER", "DEV"]);
 
-    return logs.filter((log) => {
-      const time = new Date(log.timestamp).getTime();
-      return time >= startedAt && allowedSources.has(log.source);
-    });
-  }, [logs, session]);
+    const devMapped: UnifiedLog[] = devLogs
+      .filter((log) => {
+        const time = new Date(log.timestamp).getTime();
+        return time >= startedAt && allowedSources.has(log.source);
+      })
+      .map((log) => ({
+        timestamp: log.timestamp,
+        source: log.source,
+        level: log.level,
+        event: log.event,
+        message: log.message,
+        metadata: log.metadata,
+      }));
+
+    const clientMapped: UnifiedLog[] = clientLogs
+      .filter((log) => new Date(log.timestamp).getTime() >= startedAt)
+      .map((log) => ({
+        timestamp: log.timestamp,
+        source: log.source,
+        level: log.level,
+        event: log.event,
+        message: log.message,
+        title: log.title,
+        metadata: log.metadata,
+      }));
+
+    return [...devMapped, ...clientMapped].sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    );
+  }, [devLogs, clientLogs, session]);
 
   useEffect(() => {
     if (!scrollRef.current || collapsed) return;
+
     const el = scrollRef.current;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+
     if (distanceFromBottom < 80) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [filteredLogs, collapsed]);
+  }, [mergedLogs, collapsed]);
 
   if (!session) return null;
 
@@ -217,7 +283,7 @@ export function FloatingSimulationLogPanel() {
             <div className="rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-2">
               <p className="text-gray-500">Entries</p>
               <p className="mt-1 font-semibold text-white">
-                {filteredLogs.length}
+                {mergedLogs.length}
               </p>
             </div>
             <div className="rounded-lg border border-gray-800 bg-gray-950/60 px-3 py-2">
@@ -241,12 +307,12 @@ export function FloatingSimulationLogPanel() {
             <div className="rounded-xl border border-gray-800 bg-gray-950/60 px-4 py-3 text-sm text-gray-400">
               Loading simulation logs...
             </div>
-          ) : filteredLogs.length === 0 ? (
+          ) : mergedLogs.length === 0 ? (
             <div className="rounded-xl border border-gray-800 bg-gray-950/60 px-4 py-3 text-sm text-gray-400">
               No simulation log entries yet.
             </div>
           ) : (
-            filteredLogs.map((log, index) => {
+            mergedLogs.map((log, index) => {
               const visual = getLogVisual(log);
               const Icon = visual.icon;
 

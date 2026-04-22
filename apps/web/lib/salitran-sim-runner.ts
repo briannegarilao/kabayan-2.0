@@ -9,6 +9,10 @@ import {
   type SalitranScenarioDef,
 } from "./salitran-sim";
 import { postDevReset, postForceResponderStatus, postSeedSOS } from "./dev-api";
+import {
+  appendClientSimulationFeed,
+  clearClientSimulationFeed,
+} from "./salitran-sim-feed";
 
 interface PreparedRunSummary {
   openedEvacNames: string[];
@@ -29,11 +33,24 @@ export async function prepareSalitranScenarioRun(params: {
   const seededIncidentIds: string[] = [];
   const openedEvacNames: string[] = [];
 
-  // 1) full reset first
+  clearClientSimulationFeed();
+  appendClientSimulationFeed({
+    level: "INFO",
+    event: "scenario_preparing",
+    title: "Scenario Preparing",
+    message: `Preparing ${scenario.title}.`,
+  });
+
   await postDevReset("full");
   notes.push("Previous simulation state was fully reset.");
 
-  // 2) open Salitran IV evac center rows if present
+  appendClientSimulationFeed({
+    level: "INFO",
+    event: "scenario_reset_complete",
+    title: "Simulation Reset",
+    message: "Previous simulation state was cleared.",
+  });
+
   const evacLookup = await supabase
     .from("evacuation_centers")
     .select("id, name, barangay")
@@ -64,13 +81,15 @@ export async function prepareSalitranScenarioRun(params: {
 
     openedEvacNames.push(...evacRows.map((row) => row.name));
     notes.push(`Opened ${evacRows.length} Salitran IV evac center row(s).`);
-  } else {
-    notes.push(
-      "No existing Salitran IV evac rows found. Continuing with fixed client-side demo context.",
-    );
+
+    appendClientSimulationFeed({
+      level: "INFO",
+      event: "evac_opened",
+      title: "Evac Ready",
+      message: `Opened ${evacRows.length} Salitran IV evac center row(s).`,
+    });
   }
 
-  // 3) pick responders to stage
   const responderLookup = await supabase
     .from("responders")
     .select("id")
@@ -90,7 +109,6 @@ export async function prepareSalitranScenarioRun(params: {
     );
   }
 
-  // 4) stage responders
   for (let i = 0; i < responderRows.length; i++) {
     const responder = responderRows[i];
     const staging = scenario.responderStaging[i];
@@ -108,11 +126,13 @@ export async function prepareSalitranScenarioRun(params: {
     stagedResponderIds.push(forceResult?.responder?.id ?? responder.id);
   }
 
-  notes.push(
-    `Staged ${stagedResponderIds.length} responder(s) for ${scenario.title}.`,
-  );
+  appendClientSimulationFeed({
+    level: "INFO",
+    event: "responders_staged",
+    title: "Responders Staged",
+    message: `Staged ${stagedResponderIds.length} responder(s).`,
+  });
 
-  // 5) seed incidents
   for (let i = 0; i < scenario.incidentSeeds.length; i++) {
     const seed = scenario.incidentSeeds[i];
     const isLast = i === scenario.incidentSeeds.length - 1;
@@ -133,17 +153,13 @@ export async function prepareSalitranScenarioRun(params: {
     seededIncidentIds.push(...ids);
   }
 
-  notes.push(`Seeded ${seededIncidentIds.length} incident(s).`);
+  appendClientSimulationFeed({
+    level: "INFO",
+    event: "incident_seeding_complete",
+    title: "Incidents Seeded",
+    message: `Seeded ${seededIncidentIds.length} fixed incident(s).`,
+  });
 
-  if (runMode === "setup_only") {
-    notes.push("Scenario prepared without triggering the assignment engine.");
-  } else {
-    notes.push(
-      "Scenario prepared and the assignment engine was triggered on the final seed.",
-    );
-  }
-
-  // 6) persist client-side sim session
   startSalitranSimulationSession(scenario, {
     runMode,
     seededIncidentIds,
@@ -151,6 +167,16 @@ export async function prepareSalitranScenarioRun(params: {
     openedEvacNames,
     notes,
     status: "prepared",
+  });
+
+  appendClientSimulationFeed({
+    level: "INFO",
+    event: "scenario_prepared",
+    title: "Scenario Prepared",
+    message:
+      runMode === "setup_only"
+        ? "Scenario prepared without triggering the engine."
+        : "Scenario prepared and assignment engine triggered.",
   });
 
   return {
