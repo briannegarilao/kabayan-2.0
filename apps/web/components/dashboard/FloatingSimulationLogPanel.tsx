@@ -53,6 +53,17 @@ type UnifiedLog = {
 
 type FeedFilter = "all" | "motion" | "engine" | "system";
 
+function isNoiseLog(log: Pick<UnifiedLog, "source" | "event" | "message">) {
+  if (log.source !== "DEV") return false;
+
+  return (
+    log.event === "state_active_fetch" ||
+    log.event === "stats_fetch" ||
+    log.message === "Fetched active Dev Console state snapshot" ||
+    log.message === "Fetched Dev Console stats snapshot"
+  );
+}
+
 function getLogVisual(log: UnifiedLog) {
   if (log.level === "ERROR") {
     return {
@@ -203,7 +214,11 @@ export function FloatingSimulationLogPanel() {
     const devMapped: UnifiedLog[] = devLogs
       .filter((log) => {
         const time = new Date(log.timestamp).getTime();
-        return time >= startedAt && allowedSources.has(log.source);
+        return (
+          time >= startedAt &&
+          allowedSources.has(log.source) &&
+          !isNoiseLog(log)
+        );
       })
       .map((log) => ({
         timestamp: log.timestamp,

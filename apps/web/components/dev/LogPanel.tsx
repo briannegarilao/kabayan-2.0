@@ -81,7 +81,7 @@ export function LogPanel({
   }
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
+    <div className="min-w-0 w-full max-w-[760px] rounded-xl border border-gray-800 bg-gray-900 p-5 xl:ml-auto">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-sm font-medium text-gray-200">Live Monitoring</h3>
@@ -148,24 +148,25 @@ export function LogPanel({
       <div
         ref={scrollerRef}
         onScroll={handleScroll}
-        className="max-h-130 space-y-2 overflow-y-auto rounded-lg border border-gray-800 bg-gray-950/40 p-3"
+        className="max-h-130 min-w-0 space-y-2 overflow-y-auto rounded-lg border border-gray-800 bg-gray-950/40 p-3"
       >
-        {filteredLogs.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-800 p-4 text-sm text-gray-500">
-            No logs yet for this filter.
-          </div>
-        ) : (
-          filteredLogs.map((log) => (
-            <div
-              key={`${log.id}_${log.timestamp}`}
-              className={`rounded-lg border p-3 text-xs ${levelClasses(log.level)}`}
-            >
+        <div className="w-full space-y-2">
+          {filteredLogs.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-800 p-4 text-sm text-gray-500">
+              No logs yet for this filter.
+            </div>
+          ) : (
+            filteredLogs.map((log) => (
+              <div
+                key={`${log.id}_${log.timestamp}`}
+                className={`rounded-lg border p-3 text-xs ${levelClasses(log.level)}`}
+              >
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <span className="font-semibold">{log.source}</span>
                 <span className="rounded bg-black/20 px-1.5 py-0.5 text-[10px]">
                   {log.level}
                 </span>
-                <span className="rounded bg-black/20 px-1.5 py-0.5 text-[10px]">
+                <span className="min-w-0 max-w-full truncate rounded bg-black/20 px-1.5 py-0.5 text-[10px]">
                   {log.event}
                 </span>
                 <span className="ml-auto text-[10px] opacity-70">
@@ -173,16 +174,17 @@ export function LogPanel({
                 </span>
               </div>
 
-              <p className="leading-relaxed">{log.message}</p>
+                <p className="break-words leading-relaxed">{log.message}</p>
 
-              {log.metadata && Object.keys(log.metadata).length > 0 ? (
-                <pre className="mt-2 overflow-x-auto rounded bg-black/20 p-2 text-[10px] opacity-80">
-                  {JSON.stringify(log.metadata, null, 2)}
-                </pre>
-              ) : null}
-            </div>
-          ))
-        )}
+                {log.metadata && Object.keys(log.metadata).length > 0 ? (
+                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words rounded bg-black/20 p-2 text-[10px] opacity-80">
+                    {JSON.stringify(log.metadata, null, 2)}
+                  </pre>
+                ) : null}
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       <p className="mt-3 text-[10px] text-gray-600">
